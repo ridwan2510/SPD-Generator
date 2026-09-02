@@ -215,46 +215,75 @@ def _candidate_libreoffice_paths():
 
 def cari_libreoffice():
 
-    # Windows lokal
+    # ========================================================
+    # WINDOWS
+    # ========================================================
+
     if os.name == "nt":
 
-        path = (
+        path_windows = (
             r"C:\Program Files\LibreOffice"
             r"\program\soffice.exe"
         )
 
-        if os.path.isfile(path):
-            return path
-
-        raise FileNotFoundError(
-            "LibreOffice tidak ditemukan pada:\n"
-            f"{path}"
+        print(
+            "CEK LIBREOFFICE:",
+            path_windows
         )
 
-    # Linux / Streamlit Community Cloud
-    
-        kandidat_linux = [
+        print(
+            "EXISTS:",
+            os.path.exists(
+                path_windows
+            )
+        )
+
+        if os.path.isfile(
+            path_windows
+        ):
+            return path_windows
+
+
+    # ========================================================
+    # COBA DARI PATH
+    # ========================================================
+
+    for command in [
+        "soffice",
+        "soffice.exe",
+        "libreoffice",
+    ]:
+
+        ditemukan = shutil.which(
+            command
+        )
+
+        if ditemukan:
+
+            return ditemukan
+
+
+    # ========================================================
+    # LINUX / STREAMLIT CLOUD
+    # ========================================================
+
+    kandidat_linux = [
         "/usr/bin/libreoffice",
         "/usr/bin/soffice",
     ]
 
     for path in kandidat_linux:
 
-        if os.path.isfile(path):
+        if os.path.isfile(
+            path
+        ):
             return path
 
-    # Cari dari PATH
-    for command in [
-        "libreoffice",
-        "soffice",
-    ]:
-        path = shutil.which(command)
-
-        if path:
-            return path
 
     raise FileNotFoundError(
-        "LibreOffice tidak ditemukan."
+        "LibreOffice tidak ditemukan.\n"
+        "Path yang diperiksa:\n"
+        r"C:\Program Files\LibreOffice\program\soffice.exe"
     )
 
 
