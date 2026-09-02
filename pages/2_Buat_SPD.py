@@ -1,6 +1,9 @@
 import os
 import re
 import zipfile
+import random
+import time
+import uuid
 from io import BytesIO
 from datetime import date
 
@@ -59,15 +62,37 @@ TEMPLATE_PATH = os.path.join(
     "SPD_template.docx",
 )
 
-OUTPUT_DIR = os.path.join(
+OUTPUT_BASE_DIR = os.path.join(
     BASE_DIR,
     "output",
 )
 
 os.makedirs(
-    OUTPUT_DIR,
+    OUTPUT_BASE_DIR,
     exist_ok=True,
 )
+
+# ============================================================
+# FOLDER OUTPUT KHUSUS PER SESSION
+# ============================================================
+# Setiap pengguna/sesi mendapat folder output berbeda supaya
+# file PDF/DOCX tidak saling menimpa saat dipakai bersamaan.
+
+if "spd_session_id" not in st.session_state:
+    st.session_state["spd_session_id"] = uuid.uuid4().hex
+
+SESSION_OUTPUT_DIR = os.path.join(
+    OUTPUT_BASE_DIR,
+    st.session_state["spd_session_id"],
+)
+
+os.makedirs(
+    SESSION_OUTPUT_DIR,
+    exist_ok=True,
+)
+
+# Alias agar kode lama tetap memakai OUTPUT_DIR.
+OUTPUT_DIR = SESSION_OUTPUT_DIR
 
 
 # ============================================================
@@ -131,6 +156,21 @@ BIDANG_TTE_PD_PONTREN = (
     "Pendidikan Diniyah dan Pondok Pesantren"
 )
 
+# Delay acak antar pengajuan dokumen TTE.
+# Tidak diterapkan setelah dokumen terakhir.
+TTE_DELAY_MIN_DETIK = 4
+TTE_DELAY_MAX_DETIK = 7
+
+# Lock global agar hanya satu batch pengajuan TTE berjalan
+# pada satu waktu di instance aplikasi yang sama.
+TTE_LOCK_PATH = os.path.join(
+    OUTPUT_BASE_DIR,
+    ".tte_global.lock",
+)
+
+# Lock dianggap stale jika tertinggal lebih dari 30 menit.
+TTE_LOCK_MAX_AGE_SECONDS = 30 * 60
+
 
 def normalisasi_nama_bidang(text):
     """Normalisasi nama bidang untuk pembandingan."""
@@ -158,6 +198,91 @@ def bidang_boleh_tte(bidang):
             BIDANG_TTE_PD_PONTREN
         )
     )
+
+
+def _hapus_lock_tte_kedaluwarsa():
+    """Menghapus lock yang tertinggal akibat proses berhenti/crash."""
+    if not os.path.exists(TTE_LOCK_PATH):
+        return
+
+    try:
+        umur_lock = time.time() - os.path.getmtime(
+            TTE_LOCK_PATH
+        )
+
+        if umur_lock > TTE_LOCK_MAX_AGE_SECONDS:
+            os.remove(TTE_LOCK_PATH)
+
+    except Exception:
+        pass
+
+
+def coba_kunci_tte():
+    """
+    Mencoba mengambil lock TTE secara atomik.
+
+    Return:
+        (True, owner_token) jika berhasil.
+        (False, pesan) jika sedang dipakai pengguna lain.
+    """
+
+    _hapus_lock_tte_kedaluwarsa()
+
+    owner_token = (
+        f"{st.session_state.get('spd_session_id', '-')}"
+        f"|{time.time()}"
+    )
+
+    try:
+        fd = os.open(
+            TTE_LOCK_PATH,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+        )
+
+        with os.fdopen(
+            fd,
+            "w",
+            encoding="utf-8",
+        ) as file_lock:
+            file_lock.write(owner_token)
+
+        return True, owner_token
+
+    except FileExistsError:
+        return (
+            False,
+            (
+                "Pengajuan TTE sedang diproses oleh pengguna lain. "
+                "Silakan tunggu sampai proses tersebut selesai "
+                "kemudian coba kembali."
+            ),
+        )
+
+    except Exception as e:
+        return (
+            False,
+            f"Gagal membuat penguncian proses TTE: {e}",
+        )
+
+
+def lepas_kunci_tte(owner_token):
+    """Melepas lock hanya jika lock tersebut milik sesi ini."""
+    try:
+        if not os.path.exists(TTE_LOCK_PATH):
+            return
+
+        with open(
+            TTE_LOCK_PATH,
+            "r",
+            encoding="utf-8",
+        ) as file_lock:
+            isi_lock = file_lock.read().strip()
+
+        if isi_lock == str(owner_token).strip():
+            os.remove(TTE_LOCK_PATH)
+
+    except Exception:
+        pass
 
 
 def get_pangkat_golongan(pegawai):
@@ -1387,7 +1512,10 @@ if hasil_pdf_session:
         st.caption(
             "Hanya dokumen SPD pegawai Bidang Pendidikan "
             "Diniyah dan Pondok Pesantren yang akan dikirim. "
-            "Dokumen dari bidang lain tidak ikut diajukan."
+            "Dokumen dari bidang lain tidak ikut diajukan. "
+            "Pengajuan TTE dibuat satu antrean agar beberapa "
+            "pengguna tidak mengirim dengan akun SATKER yang "
+            "sama secara bersamaan."
         )
 
         st.success(
@@ -1454,133 +1582,163 @@ if hasil_pdf_session:
 
             else:
 
-                total_tte = len(
-                    hasil_pdf_tte
-                )
+                lock_berhasil, lock_info = coba_kunci_tte()
 
-                berhasil_tte = 0
-                gagal_tte = 0
-                hasil_tte = []
+                if not lock_berhasil:
 
-                progress_tte = st.progress(
-                    0,
-                    text=(
-                        "Menyiapkan pengajuan "
-                        "TTE Kemenag..."
-                    ),
-                )
-
-                status_tte = st.empty()
-
-                for index, item in enumerate(
-                    hasil_pdf_tte,
-                    start=1,
-                ):
-
-                    nama_tte = str(
-                        item.get("nama") or "Pegawai"
-                    ).strip()
-
-                    pdf_path_tte = str(
-                        item.get("path") or ""
-                    ).strip()
-
-                    filename_tte = str(
-                        item.get("filename")
-                        or f"SPD_{safe_filename(nama_tte)}.pdf"
-                    ).strip()
-
-                    perihal_final_tte = (
-                        f"{str(perihal_tte).strip()} "
-                        f"- {nama_tte}"
-                    )
-
-                    status_tte.info(
-                        "Mengajukan SPD ke TTE: "
-                        f"{nama_tte} "
-                        f"({index}/{total_tte})"
-                    )
-
-                    try:
-
-                        sukses_tte, pesan_tte = (
-                            ajukan_file_ke_tte(
-                                pdf_path=
-                                    pdf_path_tte,
-                                perihal_dokumen=
-                                    perihal_final_tte,
-                                filename=
-                                    filename_tte,
-                            )
-                        )
-
-                    except Exception as e:
-
-                        sukses_tte = False
-                        pesan_tte = str(e)
-
-                    if sukses_tte:
-
-                        berhasil_tte += 1
-
-                    else:
-
-                        gagal_tte += 1
-
-                    hasil_tte.append(
-                        {
-                            "pegawai_id":
-                                item.get(
-                                    "pegawai_id"
-                                ),
-                            "nama":
-                                nama_tte,
-                            "nip":
-                                item.get(
-                                    "nip"
-                                ),
-                            "bidang":
-                                item.get(
-                                    "bidang"
-                                ),
-                            "filename":
-                                filename_tte,
-                            "sukses":
-                                sukses_tte,
-                            "pesan":
-                                pesan_tte,
-                        }
-                    )
-
-                    progress_tte.progress(
-                        index / total_tte,
-                        text=(
-                            f"Pengajuan TTE "
-                            f"{index}/{total_tte}"
-                        ),
-                    )
-
-                status_tte.empty()
-
-                st.session_state[
-                    "hasil_tte_spd"
-                ] = hasil_tte
-
-                if gagal_tte == 0:
-
-                    st.success(
-                        "Semua dokumen berhasil "
-                        "diajukan ke TTE Kemenag. "
-                        f"Total: {berhasil_tte} dokumen."
+                    st.warning(
+                        lock_info
                     )
 
                 else:
 
-                    st.warning(
-                        "Pengajuan TTE selesai. "
-                        f"{berhasil_tte} berhasil, "
-                        f"{gagal_tte} gagal."
-                    )
+                    owner_token_tte = lock_info
+
+                    try:
+
+                        total_tte = len(
+                            hasil_pdf_tte
+                        )
+
+                        berhasil_tte = 0
+                        gagal_tte = 0
+                        hasil_tte = []
+
+                        progress_tte = st.progress(
+                            0,
+                            text=(
+                                "Menyiapkan pengajuan "
+                                "TTE Kemenag..."
+                            ),
+                        )
+
+                        status_tte = st.empty()
+
+                        for index, item in enumerate(
+                            hasil_pdf_tte,
+                            start=1,
+                        ):
+
+                            nama_tte = str(
+                                item.get("nama") or "Pegawai"
+                            ).strip()
+
+                            pdf_path_tte = str(
+                                item.get("path") or ""
+                            ).strip()
+
+                            filename_tte = str(
+                                item.get("filename")
+                                or f"SPD_{safe_filename(nama_tte)}.pdf"
+                            ).strip()
+
+                            perihal_final_tte = (
+                                f"{str(perihal_tte).strip()} "
+                                f"- {nama_tte}"
+                            )
+
+                            status_tte.info(
+                                "Mengajukan SPD ke TTE: "
+                                f"{nama_tte} "
+                                f"({index}/{total_tte})"
+                            )
+
+                            try:
+
+                                sukses_tte, pesan_tte = (
+                                    ajukan_file_ke_tte(
+                                        pdf_path=pdf_path_tte,
+                                        perihal_dokumen=
+                                            perihal_final_tte,
+                                        filename=filename_tte,
+                                    )
+                                )
+
+                            except Exception as e:
+
+                                sukses_tte = False
+                                pesan_tte = str(e)
+
+                            if sukses_tte:
+                                berhasil_tte += 1
+                            else:
+                                gagal_tte += 1
+
+                            hasil_tte.append(
+                                {
+                                    "pegawai_id":
+                                        item.get("pegawai_id"),
+                                    "nama":
+                                        nama_tte,
+                                    "nip":
+                                        item.get("nip"),
+                                    "bidang":
+                                        item.get("bidang"),
+                                    "filename":
+                                        filename_tte,
+                                    "sukses":
+                                        sukses_tte,
+                                    "pesan":
+                                        pesan_tte,
+                                }
+                            )
+
+                            progress_tte.progress(
+                                index / total_tte,
+                                text=(
+                                    f"Pengajuan TTE "
+                                    f"{index}/{total_tte}"
+                                ),
+                            )
+
+                            # ==================================
+                            # DELAY ACAK ANTAR DOKUMEN
+                            # ==================================
+                            if index < total_tte:
+
+                                delay_tte = random.randint(
+                                    TTE_DELAY_MIN_DETIK,
+                                    TTE_DELAY_MAX_DETIK,
+                                )
+
+                                status_tte.info(
+                                    f"{nama_tte} selesai diproses. "
+                                    f"Menunggu {delay_tte} detik "
+                                    "sebelum dokumen berikutnya..."
+                                )
+
+                                time.sleep(
+                                    delay_tte
+                                )
+
+                        status_tte.empty()
+
+                        st.session_state[
+                            "hasil_tte_spd"
+                        ] = hasil_tte
+
+                        if gagal_tte == 0:
+
+                            st.success(
+                                "Semua dokumen berhasil "
+                                "diajukan ke TTE Kemenag. "
+                                f"Total: {berhasil_tte} dokumen."
+                            )
+
+                        else:
+
+                            st.warning(
+                                "Pengajuan TTE selesai. "
+                                f"{berhasil_tte} berhasil, "
+                                f"{gagal_tte} gagal."
+                            )
+
+                    finally:
+
+                        lepas_kunci_tte(
+                            owner_token_tte
+                        )
+
 
 
 # ============================================================
