@@ -1,4 +1,3 @@
-streamlit
+streamlit[pdf]
 requests
 python-docx
-pillow
