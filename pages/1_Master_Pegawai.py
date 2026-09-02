@@ -1365,7 +1365,6 @@ with tab_edit:
                 f"- "
                 f"{format_nip(p.get('nip'))}"
             ): p
-
             for p in pegawai_list
         }
 
@@ -1388,7 +1387,8 @@ with tab_edit:
                 "id",
                 ""
             )
-        )
+            or ""
+        ).strip()
 
         st.caption(
             f"ID Pegawai: {selected_id}"
@@ -1403,6 +1403,7 @@ with tab_edit:
                 "status_pegawai",
                 ""
             )
+            or ""
         ).strip()
 
         gol_sekarang = str(
@@ -1410,6 +1411,15 @@ with tab_edit:
                 "gol_ruang",
                 ""
             )
+            or ""
+        ).strip()
+
+        pangkat_sekarang = str(
+            selected.get(
+                "pangkat",
+                ""
+            )
+            or ""
         ).strip()
 
         bidang_sekarang = str(
@@ -1417,6 +1427,23 @@ with tab_edit:
                 "bidang",
                 ""
             )
+            or ""
+        ).strip()
+
+        instansi_sekarang = str(
+            selected.get(
+                "instansi",
+                ""
+            )
+            or ""
+        ).strip()
+
+        jabatan_sekarang = str(
+            selected.get(
+                "jabatan",
+                ""
+            )
+            or ""
         ).strip()
 
         if not bidang_sekarang:
@@ -1437,10 +1464,8 @@ with tab_edit:
         if (
             status_sekarang
             and
-            status_sekarang
-            not in status_options
+            status_sekarang not in status_options
         ):
-
             status_options.insert(
                 0,
                 status_sekarang
@@ -1450,8 +1475,7 @@ with tab_edit:
             status_options.index(
                 status_sekarang
             )
-            if status_sekarang
-            in status_options
+            if status_sekarang in status_options
             else 0
         )
 
@@ -1477,8 +1501,7 @@ with tab_edit:
                     )
                 ),
                 key=(
-                    "edit_nip_"
-                    f"{selected_id}"
+                    f"edit_nip_{selected_id}"
                 )
             )
 
@@ -1489,10 +1512,10 @@ with tab_edit:
                         "nama",
                         ""
                     )
+                    or ""
                 ),
                 key=(
-                    "edit_nama_"
-                    f"{selected_id}"
+                    f"edit_nama_{selected_id}"
                 )
             )
 
@@ -1501,16 +1524,18 @@ with tab_edit:
                 options=status_options,
                 index=status_index,
                 key=(
-                    "edit_status_"
-                    f"{selected_id}"
+                    f"edit_status_{selected_id}"
                 )
             )
 
             # ================================================
-            # GOLONGAN
+            # GOLONGAN / RUANG
             # ================================================
 
-            if edit_status == "PNS":
+            if edit_status in [
+                "PNS",
+                "CPNS"
+            ]:
 
                 gol_options = [
                     "-",
@@ -1536,10 +1561,8 @@ with tab_edit:
                 if (
                     gol_sekarang
                     and
-                    gol_sekarang
-                    not in gol_options
+                    gol_sekarang not in gol_options
                 ):
-
                     gol_options.insert(
                         1,
                         gol_sekarang
@@ -1549,8 +1572,7 @@ with tab_edit:
                     gol_options.index(
                         gol_sekarang
                     )
-                    if gol_sekarang
-                    in gol_options
+                    if gol_sekarang in gol_options
                     else 0
                 )
 
@@ -1559,41 +1581,69 @@ with tab_edit:
                     options=gol_options,
                     index=gol_index,
                     key=(
-                        "edit_gol_pns_"
+                        f"edit_gol_asn_"
                         f"{selected_id}"
+                    )
+                )
+
+                # ============================================
+                # PANGKAT OTOMATIS PNS / CPNS
+                # ============================================
+
+                edit_pangkat = (
+                    get_pangkat_otomatis(
+                        edit_status,
+                        edit_gol
+                    )
+                )
+
+                st.text_input(
+                    "Pangkat",
+                    value=(
+                        edit_pangkat
+                        if edit_pangkat
+                        else "-"
+                    ),
+                    disabled=True,
+                    key=(
+                        f"edit_pangkat_preview_"
+                        f"{selected_id}_"
+                        f"{edit_status}"
                     )
                 )
 
             else:
 
+                # ============================================
+                # PPPK / PPPK PARUH WAKTU / EKSTERNAL
+                # Golongan dan pangkat tidak memakai mapping PNS.
+                # ============================================
+
                 edit_gol = st.text_input(
                     "Golongan / Ruang",
                     value=gol_sekarang,
+                    placeholder=(
+                        "Contoh PPPK: V, VII, IX"
+                    ),
                     key=(
-                        "edit_gol_nonpns_"
+                        f"edit_gol_nonpns_"
                         f"{selected_id}"
                     )
                 )
 
-            # ================================================
-            # PANGKAT OTOMATIS
-            # ================================================
-
-
-            edit_pangkat = get_pangkat_otomatis(
-            edit_status,
-            edit_gol
+                edit_pangkat = st.text_input(
+                    "Pangkat",
+                    value=(
+                        pangkat_sekarang
+                        if pangkat_sekarang
+                        else "-"
+                    ),
+                    key=(
+                        f"edit_pangkat_nonpns_"
+                        f"{selected_id}_"
+                        f"{edit_status}"
+                    )
                 )
-
-            st.text_input(
-            "Pangkat",
-            value=(
-            edit_pangkat
-            if edit_pangkat
-            else "-"
-            ),
-            disabled=True
-        )
 
         # ====================================================
         # KOLOM KANAN
@@ -1603,51 +1653,48 @@ with tab_edit:
 
             edit_jabatan = st.text_input(
                 "Jabatan",
-                value=str(
-                    selected.get(
-                        "jabatan",
-                        ""
-                    )
-                ),
+                value=jabatan_sekarang,
                 key=(
-                    "edit_jabatan_"
+                    f"edit_jabatan_"
                     f"{selected_id}"
                 )
             )
 
             # ================================================
-            # BIDANG OTOMATIS
+            # BIDANG
             # ================================================
 
             edit_bidang_options = (
                 bidang_master.copy()
             )
 
-            # Jika bidang pegawai lama belum ada
-            # di master, tetap tampilkan.
             if (
                 bidang_sekarang
                 not in edit_bidang_options
             ):
-
                 edit_bidang_options.append(
                     bidang_sekarang
                 )
 
-            # "-" selalu di posisi pertama
+            # Pastikan "-" hanya satu kali dan di posisi pertama.
             edit_bidang_options = [
                 "-"
-            ] + sorted([
-                bidang
-                for bidang
-                in edit_bidang_options
-                if bidang != "-"
-            ])
+            ] + sorted({
+                str(bidang).strip()
+                for bidang in edit_bidang_options
+                if (
+                    str(bidang).strip()
+                    and
+                    str(bidang).strip() != "-"
+                )
+            })
 
             bidang_index = (
                 edit_bidang_options.index(
                     bidang_sekarang
                 )
+                if bidang_sekarang in edit_bidang_options
+                else 0
             )
 
             edit_bidang = st.selectbox(
@@ -1655,21 +1702,16 @@ with tab_edit:
                 options=edit_bidang_options,
                 index=bidang_index,
                 key=(
-                    "edit_bidang_"
+                    f"edit_bidang_"
                     f"{selected_id}"
                 )
             )
 
             edit_instansi = st.text_input(
                 "Instansi",
-                value=str(
-                    selected.get(
-                        "instansi",
-                        ""
-                    )
-                ),
+                value=instansi_sekarang,
                 key=(
-                    "edit_instansi_"
+                    f"edit_instansi_"
                     f"{selected_id}"
                 )
             )
@@ -1685,7 +1727,7 @@ with tab_edit:
             type="primary",
             use_container_width=True,
             key=(
-                "btn_update_pegawai_"
+                f"btn_update_pegawai_"
                 f"{selected_id}"
             )
         ):
@@ -1693,14 +1735,20 @@ with tab_edit:
             error = []
 
             edit_nip_clean = (
-                edit_nip
-                .strip()
+                edit_nip.strip()
             )
 
             edit_nama_clean = (
-                edit_nama
-                .strip()
+                edit_nama.strip()
             )
+
+            edit_pangkat_clean = str(
+                edit_pangkat or ""
+            ).strip()
+
+            edit_gol_clean = str(
+                edit_gol or ""
+            ).strip()
 
             # ================================================
             # VALIDASI
@@ -1730,14 +1778,20 @@ with tab_edit:
                 )
 
             if (
-                edit_status == "PNS"
+                edit_status in [
+                    "PNS",
+                    "CPNS"
+                ]
                 and
-                edit_gol == "-"
+                edit_gol_clean in [
+                    "",
+                    "-"
+                ]
             ):
 
                 error.append(
-                    "Golongan / Ruang PNS "
-                    "wajib dipilih."
+                    "Golongan / Ruang "
+                    f"{edit_status} wajib dipilih."
                 )
 
             # ================================================
@@ -1747,7 +1801,9 @@ with tab_edit:
             if error:
 
                 for item in error:
-                    st.error(item)
+                    st.error(
+                        item
+                    )
 
             else:
 
@@ -1761,11 +1817,11 @@ with tab_edit:
                             pegawai_id=selected_id,
                             nip=edit_nip_clean,
                             nama=edit_nama_clean,
-                            pangkat=edit_pangkat,
-                            gol_ruang=edit_gol,
-                            jabatan=edit_jabatan,
+                            pangkat=edit_pangkat_clean,
+                            gol_ruang=edit_gol_clean,
+                            jabatan=edit_jabatan.strip(),
                             bidang=edit_bidang,
-                            instansi=edit_instansi,
+                            instansi=edit_instansi.strip(),
                             status_pegawai=edit_status
                         )
 
@@ -1774,12 +1830,11 @@ with tab_edit:
                     st.session_state[
                         "pegawai_message"
                     ] = {
-                        "type":
-                            "success",
-
-                        "text":
+                        "type": "success",
+                        "text": (
                             "Data pegawai berhasil "
                             "diperbarui."
+                        )
                     }
 
                     st.rerun()
@@ -1816,7 +1871,7 @@ with tab_edit:
                 f"{selected.get('nama', '')}"
             ),
             key=(
-                "confirm_delete_"
+                f"confirm_delete_"
                 f"{selected_id}"
             )
         )
@@ -1826,7 +1881,7 @@ with tab_edit:
             disabled=not konfirmasi,
             use_container_width=True,
             key=(
-                "btn_delete_pegawai_"
+                f"btn_delete_pegawai_"
                 f"{selected_id}"
             )
         ):
@@ -1846,12 +1901,11 @@ with tab_edit:
                 st.session_state[
                     "pegawai_message"
                 ] = {
-                    "type":
-                        "success",
-
-                    "text":
+                    "type": "success",
+                    "text": (
                         "Pegawai berhasil "
                         "dihapus."
+                    )
                 }
 
                 st.rerun()
@@ -1865,6 +1919,7 @@ with tab_edit:
                 st.code(
                     str(e)
                 )
+
                 
 # ============================================================
 # TAB MASTER PPK
