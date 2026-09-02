@@ -1,3 +1,4 @@
 streamlit[pdf]
 requests
 python-docx
+beautifulsoup4

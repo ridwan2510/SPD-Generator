@@ -21,6 +21,10 @@ from services.preview_service import (
     show_pdf,
 )
 
+from services.tte_service import (
+    ajukan_file_ke_tte,
+)
+
 
 # ============================================================
 # PAGE CONFIG
@@ -88,6 +92,9 @@ if "zip_spd_bytes" not in st.session_state:
 if "zip_spd_filename" not in st.session_state:
     st.session_state["zip_spd_filename"] = None
 
+if "hasil_tte_spd" not in st.session_state:
+    st.session_state["hasil_tte_spd"] = []
+
 
 # ============================================================
 # HELPER
@@ -113,6 +120,43 @@ def safe_filename(text):
     return text.replace(
         " ",
         "_",
+    )
+
+
+# ============================================================
+# KONFIGURASI TTE KHUSUS PD PONTREN
+# ============================================================
+
+BIDANG_TTE_PD_PONTREN = (
+    "Pendidikan Diniyah dan Pondok Pesantren"
+)
+
+
+def normalisasi_nama_bidang(text):
+    """Normalisasi nama bidang untuk pembandingan."""
+    nilai = str(text or "").strip().casefold()
+
+    nilai = re.sub(
+        r"\s+",
+        " ",
+        nilai,
+    )
+
+    # Tetap menerima data lama yang memakai awalan "Bidang ".
+    if nilai.startswith("bidang "):
+        nilai = nilai[7:].strip()
+
+    return nilai
+
+
+def bidang_boleh_tte(bidang):
+    """TTE pada aplikasi ini hanya untuk PD Pontren."""
+    return (
+        normalisasi_nama_bidang(bidang)
+        ==
+        normalisasi_nama_bidang(
+            BIDANG_TTE_PD_PONTREN
+        )
     )
 
 
@@ -1306,6 +1350,280 @@ if hasil_pdf_session:
                     f"{item['pegawai_id']}"
                 ),
             )
+
+
+# ============================================================
+# PENGAJUAN TTE KEMENAG - KHUSUS PD PONTREN
+# ============================================================
+
+if hasil_pdf_session:
+
+    hasil_pdf_tte = [
+        item
+        for item in hasil_pdf_session
+        if bidang_boleh_tte(
+            item.get("bidang")
+        )
+        and os.path.exists(
+            item.get("path") or ""
+        )
+    ]
+
+    st.divider()
+    st.subheader(
+        "✍️ Pengajuan TTE Kemenag - PD Pontren"
+    )
+
+    if not hasil_pdf_tte:
+
+        st.info(
+            "Pengajuan TTE dari aplikasi ini hanya tersedia "
+            "untuk SPD pegawai Bidang Pendidikan Diniyah "
+            "dan Pondok Pesantren."
+        )
+
+    else:
+
+        st.caption(
+            "Hanya dokumen SPD pegawai Bidang Pendidikan "
+            "Diniyah dan Pondok Pesantren yang akan dikirim. "
+            "Dokumen dari bidang lain tidak ikut diajukan."
+        )
+
+        st.success(
+            f"{len(hasil_pdf_tte)} dokumen SPD PD Pontren "
+            "siap diajukan ke TTE Kemenag."
+        )
+
+        with st.expander(
+            "Lihat dokumen yang akan diajukan",
+            expanded=False,
+        ):
+
+            for nomor, item in enumerate(
+                hasil_pdf_tte,
+                start=1,
+            ):
+
+                st.markdown(
+                    f"**{nomor}. {item.get('nama') or '-'}**  \n"
+                    f"NIP: `{item.get('nip') or '-'}`  \n"
+                    f"Bidang: `{item.get('bidang') or '-'}`  \n"
+                    f"File: `{item.get('filename') or '-'}'"
+                )
+
+                if nomor < len(
+                    hasil_pdf_tte
+                ):
+                    st.divider()
+
+        perihal_tte = st.text_input(
+            "Perihal Dokumen TTE",
+            value="Surat Perjalanan Dinas",
+            help=(
+                "Nama pegawai akan ditambahkan otomatis "
+                "pada bagian akhir perihal."
+            ),
+            key="perihal_tte_pd_pontren",
+        )
+
+        konfirmasi_tte = st.checkbox(
+            (
+                "Saya sudah memeriksa dokumen dan yakin "
+                "akan mengajukan seluruh SPD PD Pontren "
+                "di atas ke TTE Kemenag."
+            ),
+            key="konfirmasi_tte_pd_pontren",
+        )
+
+        if st.button(
+            "✍️ Ajukan Semua PD Pontren ke TTE Kemenag",
+            type="primary",
+            use_container_width=True,
+            disabled=not konfirmasi_tte,
+            key="btn_ajukan_semua_tte_pd_pontren",
+        ):
+
+            if not str(
+                perihal_tte or ""
+            ).strip():
+
+                st.error(
+                    "Perihal Dokumen TTE wajib diisi."
+                )
+
+            else:
+
+                total_tte = len(
+                    hasil_pdf_tte
+                )
+
+                berhasil_tte = 0
+                gagal_tte = 0
+                hasil_tte = []
+
+                progress_tte = st.progress(
+                    0,
+                    text=(
+                        "Menyiapkan pengajuan "
+                        "TTE Kemenag..."
+                    ),
+                )
+
+                status_tte = st.empty()
+
+                for index, item in enumerate(
+                    hasil_pdf_tte,
+                    start=1,
+                ):
+
+                    nama_tte = str(
+                        item.get("nama") or "Pegawai"
+                    ).strip()
+
+                    pdf_path_tte = str(
+                        item.get("path") or ""
+                    ).strip()
+
+                    filename_tte = str(
+                        item.get("filename")
+                        or f"SPD_{safe_filename(nama_tte)}.pdf"
+                    ).strip()
+
+                    perihal_final_tte = (
+                        f"{str(perihal_tte).strip()} "
+                        f"- {nama_tte}"
+                    )
+
+                    status_tte.info(
+                        "Mengajukan SPD ke TTE: "
+                        f"{nama_tte} "
+                        f"({index}/{total_tte})"
+                    )
+
+                    try:
+
+                        sukses_tte, pesan_tte = (
+                            ajukan_file_ke_tte(
+                                pdf_path=
+                                    pdf_path_tte,
+                                perihal_dokumen=
+                                    perihal_final_tte,
+                                filename=
+                                    filename_tte,
+                            )
+                        )
+
+                    except Exception as e:
+
+                        sukses_tte = False
+                        pesan_tte = str(e)
+
+                    if sukses_tte:
+
+                        berhasil_tte += 1
+
+                    else:
+
+                        gagal_tte += 1
+
+                    hasil_tte.append(
+                        {
+                            "pegawai_id":
+                                item.get(
+                                    "pegawai_id"
+                                ),
+                            "nama":
+                                nama_tte,
+                            "nip":
+                                item.get(
+                                    "nip"
+                                ),
+                            "bidang":
+                                item.get(
+                                    "bidang"
+                                ),
+                            "filename":
+                                filename_tte,
+                            "sukses":
+                                sukses_tte,
+                            "pesan":
+                                pesan_tte,
+                        }
+                    )
+
+                    progress_tte.progress(
+                        index / total_tte,
+                        text=(
+                            f"Pengajuan TTE "
+                            f"{index}/{total_tte}"
+                        ),
+                    )
+
+                status_tte.empty()
+
+                st.session_state[
+                    "hasil_tte_spd"
+                ] = hasil_tte
+
+                if gagal_tte == 0:
+
+                    st.success(
+                        "Semua dokumen berhasil "
+                        "diajukan ke TTE Kemenag. "
+                        f"Total: {berhasil_tte} dokumen."
+                    )
+
+                else:
+
+                    st.warning(
+                        "Pengajuan TTE selesai. "
+                        f"{berhasil_tte} berhasil, "
+                        f"{gagal_tte} gagal."
+                    )
+
+
+# ============================================================
+# HASIL PENGAJUAN TTE
+# ============================================================
+
+hasil_tte_session = st.session_state.get(
+    "hasil_tte_spd",
+    [],
+)
+
+if hasil_tte_session:
+
+    with st.expander(
+        "Status Pengajuan TTE Terakhir",
+        expanded=True,
+    ):
+
+        for item in hasil_tte_session:
+
+            nama_tte = (
+                item.get("nama")
+                or "-"
+            )
+
+            pesan_tte = (
+                item.get("pesan")
+                or "-"
+            )
+
+            if item.get("sukses"):
+
+                st.success(
+                    f"✅ {nama_tte}: "
+                    f"{pesan_tte}"
+                )
+
+            else:
+
+                st.error(
+                    f"❌ {nama_tte}: "
+                    f"{pesan_tte}"
+                )
 
 
 # ============================================================
