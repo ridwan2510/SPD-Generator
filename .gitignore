@@ -1,19 +1,11 @@
-# Virtual environment
-venv/
-.venv/
-
-# Secrets
-.streamlit/secrets.toml
-.env
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-
-# Dokumen internal
 templates/
 output/
-
-# Microsoft Office temporary files
+template_base64.txt
+encode_template.py
+.streamlit/secrets.toml
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
 ~$*

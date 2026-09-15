@@ -1,4 +1,5 @@
 import os
+import base64
 import platform
 import shutil
 import subprocess
@@ -97,6 +98,64 @@ def _replace_header_footer(document, replacements):
             _replace_in_paragraph(paragraph, replacements)
         for table in section.footer.tables:
             _replace_in_table(table, replacements)
+
+
+def get_spd_template_path():
+    """
+    Mengambil template SPD.
+
+    Prioritas:
+    1. File lokal templates/SPD_template.docx (untuk development lokal).
+    2. Base64 dari Streamlit Secrets [template].spd_base64 (untuk Cloud).
+
+    Template dari Secrets ditulis ke folder temporary runtime, bukan ke repository.
+    """
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_path = os.path.join(base_dir, "templates", "SPD_template.docx")
+
+    if os.path.isfile(local_path):
+        return local_path
+
+    try:
+        import streamlit as st
+        encoded = str(st.secrets["template"]["spd_base64"]).strip()
+    except Exception as exc:
+        raise FileNotFoundError(
+            "Template SPD tidak ditemukan di folder templates dan "
+            "secret [template].spd_base64 juga tidak tersedia."
+        ) from exc
+
+    # Aman terhadap copy/paste Base64 yang mengandung line break/spasi.
+    encoded = "".join(encoded.split())
+    if not encoded:
+        raise FileNotFoundError(
+            "Streamlit Secret [template].spd_base64 kosong."
+        )
+
+    try:
+        template_bytes = base64.b64decode(encoded, validate=True)
+    except Exception as exc:
+        raise ValueError(
+            "Isi [template].spd_base64 bukan Base64 yang valid. "
+            "Encode ulang SPD_template.docx lalu salin seluruh hasilnya."
+        ) from exc
+
+    # DOCX adalah ZIP; signature normal dimulai PK.
+    if not template_bytes.startswith(b"PK"):
+        raise ValueError(
+            "Base64 berhasil didecode, tetapi hasilnya bukan file DOCX yang valid."
+        )
+
+    template_dir = os.path.join(tempfile.gettempdir(), "spd_generator_templates")
+    os.makedirs(template_dir, exist_ok=True)
+    template_path = os.path.join(template_dir, "SPD_template.docx")
+
+    # Tulis ulang hanya bila file belum ada atau isinya berubah.
+    if not os.path.isfile(template_path) or os.path.getsize(template_path) != len(template_bytes):
+        with open(template_path, "wb") as file_template:
+            file_template.write(template_bytes)
+
+    return template_path
 
 
 def generate_document(template_path, output_path, replacements):

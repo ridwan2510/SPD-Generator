@@ -18,6 +18,7 @@ from services.document_service import (
     generate_document,
     format_tanggal_indonesia,
     convert_docx_to_pdf,
+    get_spd_template_path,
 )
 
 from services.preview_service import (
@@ -56,11 +57,15 @@ BASE_DIR = os.path.dirname(
     )
 )
 
-TEMPLATE_PATH = os.path.join(
-    BASE_DIR,
-    "templates",
-    "SPD_template.docx",
-)
+# Template tidak harus berada di GitHub.
+# Lokal: services.document_service akan memakai templates/SPD_template.docx.
+# Cloud: template diambil dari Streamlit Secrets [template].spd_base64.
+try:
+    TEMPLATE_PATH = get_spd_template_path()
+except Exception as e:
+    st.error("Template SPD tidak dapat dimuat.")
+    st.code(str(e))
+    st.stop()
 
 OUTPUT_BASE_DIR = os.path.join(
     BASE_DIR,
