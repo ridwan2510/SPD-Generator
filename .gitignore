@@ -1,0 +1,20 @@
+# Virtual Environment
+venv/
+.venv/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Output
+output/
+
+# Microsoft Office temporary files
+~$*
