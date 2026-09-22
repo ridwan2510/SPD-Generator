@@ -410,7 +410,6 @@ def get_all_bidang():
     ttl=60,
     show_spinner=False
 )
-@st.cache_data(ttl=60, show_spinner=False)
 def get_all_ppk():
 
     data = api_get(

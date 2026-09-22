@@ -49,6 +49,11 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+
+    /* ======================================================
+       RESPONSIVE PAGE
+       ====================================================== */
+
     .block-container {
         max-width: 1500px;
         padding-top: 2rem;
@@ -57,13 +62,85 @@ st.markdown(
         padding-right: 3rem;
     }
 
+    /* ======================================================
+       FORM CONTROLS
+       ====================================================== */
+
     div[data-testid="stMultiSelect"],
     div[data-testid="stTextInput"],
     div[data-testid="stTextArea"],
     div[data-testid="stDateInput"],
     div[data-testid="stNumberInput"] {
         width: 100%;
+        max-width: 100%;
     }
+
+    /* ======================================================
+       MULTISELECT PEGAWAI
+
+       Streamlit/BaseWeb menggunakan flex untuk chip/tag.
+       Paksa container untuk membungkus tag ke baris berikutnya
+       sehingga tidak memanjang keluar area form.
+       ====================================================== */
+
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 3px !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Chip pegawai tetap berada di dalam container */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+        display: inline-flex !important;
+        flex: 0 1 auto !important;
+        max-width: calc(100% - 8px) !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        margin: 2px 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* Teks chip dipotong dengan ellipsis, bukan memaksa container melebar */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] span {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    /* Tombol hapus chip tidak ikut mengecil */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] svg {
+        flex-shrink: 0 !important;
+    }
+
+    /* Input pencarian tetap punya ruang dan tidak mendorong chip */
+    div[data-testid="stMultiSelect"] input {
+        min-width: 60px !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* ======================================================
+       BORDER / CONTAINER
+       ====================================================== */
+
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 10px;
+    }
+
+    /* ======================================================
+       RESPONSIVE BREAKPOINTS
+       ====================================================== */
 
     @media (max-width: 1200px) {
         .block-container {
@@ -93,6 +170,7 @@ st.markdown(
             font-size: 1.6rem;
         }
     }
+
     </style>
     """,
     unsafe_allow_html=True,
