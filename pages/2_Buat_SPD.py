@@ -78,55 +78,78 @@ st.markdown(
     /* ======================================================
        MULTISELECT PEGAWAI
 
-       Setiap pegawai dibuat satu baris.
-       Ini sengaja dibuat 100% width agar tidak memanjang ke kanan.
+       Streamlit memakai BaseWeb/React-Select. Pada beberapa
+       versi Streamlit, container tag bukan direct child dari
+       [data-baseweb="select"], sehingga selector lama tidak
+       mengenai container flex yang sebenarnya.
+
+       Solusi: cari ValueContainer yang LANGSUNG mempunyai tag
+       pegawai dengan :has() lalu ubah layout-nya menjadi GRID.
+       Setiap tag mendapat satu baris penuh.
        ====================================================== */
 
     div[data-testid="stMultiSelect"] {
         width: 100% !important;
         max-width: 100% !important;
+        min-width: 0 !important;
         overflow: visible !important;
     }
 
     div[data-testid="stMultiSelect"] [data-baseweb="select"] {
         width: 100% !important;
         max-width: 100% !important;
+        min-width: 0 !important;
         box-sizing: border-box !important;
         overflow: visible !important;
     }
 
-    /* BaseWeb menyimpan tag di dalam flex container.
-       Paksa container untuk wrap. */
-    div[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
-        display: flex !important;
-        flex-wrap: wrap !important;
+    /*
+       Ini adalah container yang berisi chip/tag + input.
+       Selector :has() membuat aturan ini tidak bergantung
+       pada class CSS BaseWeb yang berubah-ubah.
+    */
+    div[data-testid="stMultiSelect"]
+    [data-baseweb="select"] div:has(> [data-baseweb="tag"]) {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-auto-rows: min-content !important;
         align-items: center !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        overflow: visible !important;
-    }
-
-    /* SATU PEGAWAI = SATU BARIS */
-    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
-        display: flex !important;
-        flex: 0 0 100% !important;
         width: 100% !important;
         max-width: 100% !important;
         min-width: 0 !important;
         box-sizing: border-box !important;
-        margin: 2px 0 !important;
+        gap: 3px !important;
+        overflow: visible !important;
+    }
+
+    /*
+       SATU PEGAWAI = SATU BARIS.
+       Grid akan otomatis menempatkan tag berikutnya
+       ke row berikutnya.
+    */
+    div[data-testid="stMultiSelect"]
+    [data-baseweb="select"] div:has(> [data-baseweb="tag"])
+    > [data-baseweb="tag"] {
+        display: flex !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
         overflow: hidden !important;
     }
 
-    /* Isi teks chip */
-    div[data-testid="stMultiSelect"] [data-baseweb="tag"] > div {
+    /* Isi teks chip tidak boleh mendorong container ke kanan. */
+    div[data-testid="stMultiSelect"]
+    [data-baseweb="select"] [data-baseweb="tag"] > div {
+        flex: 1 1 auto !important;
         min-width: 0 !important;
         max-width: calc(100% - 28px) !important;
         overflow: hidden !important;
     }
 
-    div[data-testid="stMultiSelect"] [data-baseweb="tag"] span {
+    div[data-testid="stMultiSelect"]
+    [data-baseweb="select"] [data-baseweb="tag"] span {
         display: block !important;
         min-width: 0 !important;
         max-width: 100% !important;
@@ -135,24 +158,36 @@ st.markdown(
         white-space: nowrap !important;
     }
 
-    /* Tombol hapus */
-    div[data-testid="stMultiSelect"] [data-baseweb="tag"] svg {
+    /* Tombol X tidak ikut mengecil. */
+    div[data-testid="stMultiSelect"]
+    [data-baseweb="select"] [data-baseweb="tag"] button,
+    div[data-testid="stMultiSelect"]
+    [data-baseweb="select"] [data-baseweb="tag"] svg {
+        flex: 0 0 auto !important;
         flex-shrink: 0 !important;
     }
 
-    /* Input pencarian diletakkan setelah daftar chip */
-    div[data-testid="stMultiSelect"] [data-baseweb="select"] input {
-        flex: 1 1 80px !important;
-        min-width: 80px !important;
+    /*
+       Input pencarian tetap berada setelah daftar tag.
+       Karena parent sudah grid, input otomatis mendapat
+       baris sendiri setelah tag terakhir.
+    */
+    div[data-testid="stMultiSelect"]
+    [data-baseweb="select"] input {
+        width: 100% !important;
         max-width: 100% !important;
+        min-width: 0 !important;
         box-sizing: border-box !important;
+        grid-column: 1 !important;
     }
 
-    /* Jangan biarkan elemen internal membuat horizontal overflow */
+    /* Cegah child BaseWeb membuat horizontal overflow. */
     div[data-testid="stMultiSelect"] * {
-        max-width: 100%;
         box-sizing: border-box;
     }
+
+    /* Jangan sembunyikan overflow pada wrapper utama karena
+       dropdown option tetap harus bisa muncul. */
 
     /* ======================================================
        BORDER / CONTAINER
