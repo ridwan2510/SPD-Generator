@@ -472,6 +472,43 @@ def get_all_ppk():
     return hasil
 
 
+def get_ppk_by_bidang_local(
+    semua_ppk,
+    bidang,
+):
+    """
+    Mencari PPK aktif berdasarkan bidang dari data master PPK
+    yang sudah tersedia di memory/cache. Fungsi ini tidak melakukan
+    request API baru.
+    """
+
+    bidang_target = str(
+        bidang or ""
+    ).strip().casefold()
+
+    if bidang_target.startswith("bidang "):
+        bidang_target = bidang_target[7:].strip()
+
+    if not bidang_target:
+        return None
+
+    for ppk in semua_ppk or []:
+        if int(ppk.get("aktif", 0) or 0) != 1:
+            continue
+
+        bidang_ppk = str(
+            ppk.get("bidang") or ""
+        ).strip().casefold()
+
+        if bidang_ppk.startswith("bidang "):
+            bidang_ppk = bidang_ppk[7:].strip()
+
+        if bidang_ppk == bidang_target:
+            return ppk
+
+    return None
+
+
 def get_ppk_by_id(
     ppk_id
 ):

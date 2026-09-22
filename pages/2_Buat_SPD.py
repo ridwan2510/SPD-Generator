@@ -12,7 +12,7 @@ import streamlit as st
 from services.api_service import (
     get_all_pegawai,
     get_all_ppk,
-    get_ppk_by_bidang,
+    get_ppk_by_bidang_local,
 )
 
 from services.document_service import (
@@ -39,6 +39,63 @@ st.set_page_config(
     page_title="Buat SPD",
     page_icon="📄",
     layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ============================================================
+# RESPONSIVE LAYOUT
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 1500px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+    }
+
+    div[data-testid="stMultiSelect"],
+    div[data-testid="stTextInput"],
+    div[data-testid="stTextArea"],
+    div[data-testid="stDateInput"],
+    div[data-testid="stNumberInput"] {
+        width: 100%;
+    }
+
+    @media (max-width: 1200px) {
+        .block-container {
+            padding-left: 2rem;
+            padding-right: 2rem;
+        }
+    }
+
+    @media (max-width: 900px) {
+        .block-container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .block-container {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+
+        h1 {
+            font-size: 1.6rem;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.title("Buat Surat Perjalanan Dinas")
@@ -465,7 +522,7 @@ pegawai_by_id = {
 # ============================================================
 
 col_form, col_preview = st.columns(
-    [1, 1.30],
+    [1.35, 1],
     gap="large",
 )
 
@@ -483,7 +540,7 @@ with col_form:
 
     st.caption(
         "Pegawai dapat dipilih lintas bidang. "
-        "PPK akan ditentukan otomatis dari bidang masing-masing pegawai."
+        "PPK dapat mengikuti bidang pegawai atau dipilih langsung dari master PPK."
     )
 
     pegawai_id_terpilih = st.multiselect(
@@ -494,6 +551,7 @@ with col_form:
         ),
         key="pegawai_spd_multi",
         placeholder="Pilih satu atau beberapa pegawai",
+        help="Anda dapat memilih pegawai dari bidang yang berbeda.",
     )
 
     pegawai_terpilih = [
@@ -581,8 +639,21 @@ Jabatan: `{jabatan}`
         st.info("Pilih pegawai terlebih dahulu.")
 
     elif ppk_mode == "Sesuai bidang pegawai":
+        # Ambil seluruh master PPK sekali saja.
+        # Pencarian berdasarkan bidang dilakukan lokal sehingga
+        # perubahan pilihan pegawai tidak memicu request ppk.byBidang.
+        try:
+            semua_ppk = [
+                ppk
+                for ppk in get_all_ppk()
+                if int(ppk.get("aktif", 0) or 0) == 1
+            ]
+        except Exception as e:
+            semua_ppk = []
+            st.error("Gagal mengambil master PPK.")
+            st.code(str(e))
+
         bidang_pegawai_terpilih = []
-        pegawai_tanpa_bidang = []
 
         for pegawai in pegawai_terpilih:
             bidang = str(pegawai.get("bidang") or "").strip()
@@ -595,21 +666,21 @@ Jabatan: `{jabatan}`
                     str(pegawai.get("nama") or "-")
                 )
 
-        bidang_pegawai_terpilih = sorted(bidang_pegawai_terpilih)
+        bidang_pegawai_terpilih = sorted(
+            bidang_pegawai_terpilih
+        )
 
         for bidang in bidang_pegawai_terpilih:
-            try:
-                data_ppk = get_ppk_by_bidang(bidang)
+            data_ppk = get_ppk_by_bidang_local(
+                semua_ppk,
+                bidang,
+            )
 
-                if data_ppk:
-                    ppk_by_bidang[bidang] = data_ppk
-                else:
-                    ppk_error.append(
-                        f"Belum ada PPK aktif untuk bidang: {bidang}"
-                    )
-            except Exception as e:
+            if data_ppk:
+                ppk_by_bidang[bidang] = data_ppk
+            else:
                 ppk_error.append(
-                    f"Gagal mengambil PPK untuk bidang {bidang}: {e}"
+                    f"Belum ada PPK aktif untuk bidang: {bidang}"
                 )
 
         if pegawai_tanpa_bidang:
@@ -622,11 +693,17 @@ Jabatan: `{jabatan}`
             ppk_item = ppk_by_bidang.get(bidang)
 
             if not ppk_item:
-                st.warning(f"⚠️ {bidang} — PPK aktif belum tersedia.")
+                st.warning(
+                    f"⚠️ {bidang} — PPK aktif belum tersedia."
+                )
                 continue
 
-            nama_ppk = str(ppk_item.get("nama") or "")
-            nip_ppk = str(ppk_item.get("nip") or "")
+            nama_ppk = str(
+                ppk_item.get("nama") or ""
+            )
+            nip_ppk = str(
+                ppk_item.get("nip") or ""
+            )
 
             with st.container(border=True):
                 st.markdown(f"**{bidang}**")
