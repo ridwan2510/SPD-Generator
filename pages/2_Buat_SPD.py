@@ -78,39 +78,56 @@ st.markdown(
     /* ======================================================
        MULTISELECT PEGAWAI
 
-       Streamlit/BaseWeb menggunakan flex untuk chip/tag.
-       Paksa container untuk membungkus tag ke baris berikutnya
-       sehingga tidak memanjang keluar area form.
+       Setiap pegawai dibuat satu baris.
+       Ini sengaja dibuat 100% width agar tidak memanjang ke kanan.
        ====================================================== */
+
+    div[data-testid="stMultiSelect"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: visible !important;
+    }
 
     div[data-testid="stMultiSelect"] [data-baseweb="select"] {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
+        overflow: visible !important;
     }
 
+    /* BaseWeb menyimpan tag di dalam flex container.
+       Paksa container untuk wrap. */
     div[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
         display: flex !important;
         flex-wrap: wrap !important;
         align-items: center !important;
-        gap: 3px !important;
+        width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
+        overflow: visible !important;
     }
 
-    /* Chip pegawai tetap berada di dalam container */
+    /* SATU PEGAWAI = SATU BARIS */
     div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
-        display: inline-flex !important;
-        flex: 0 1 auto !important;
-        max-width: calc(100% - 8px) !important;
+        display: flex !important;
+        flex: 0 0 100% !important;
+        width: 100% !important;
+        max-width: 100% !important;
         min-width: 0 !important;
         box-sizing: border-box !important;
         margin: 2px 0 !important;
         overflow: hidden !important;
     }
 
-    /* Teks chip dipotong dengan ellipsis, bukan memaksa container melebar */
+    /* Isi teks chip */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] > div {
+        min-width: 0 !important;
+        max-width: calc(100% - 28px) !important;
+        overflow: hidden !important;
+    }
+
     div[data-testid="stMultiSelect"] [data-baseweb="tag"] span {
+        display: block !important;
         min-width: 0 !important;
         max-width: 100% !important;
         overflow: hidden !important;
@@ -118,16 +135,23 @@ st.markdown(
         white-space: nowrap !important;
     }
 
-    /* Tombol hapus chip tidak ikut mengecil */
+    /* Tombol hapus */
     div[data-testid="stMultiSelect"] [data-baseweb="tag"] svg {
         flex-shrink: 0 !important;
     }
 
-    /* Input pencarian tetap punya ruang dan tidak mendorong chip */
-    div[data-testid="stMultiSelect"] input {
-        min-width: 60px !important;
+    /* Input pencarian diletakkan setelah daftar chip */
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] input {
+        flex: 1 1 80px !important;
+        min-width: 80px !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
+    }
+
+    /* Jangan biarkan elemen internal membuat horizontal overflow */
+    div[data-testid="stMultiSelect"] * {
+        max-width: 100%;
+        box-sizing: border-box;
     }
 
     /* ======================================================
