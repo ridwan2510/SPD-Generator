@@ -1,4 +1,4 @@
-streamlit[pdf]
+streamlit[pdf]==1.62.0
 requests
 python-docx
 beautifulsoup4

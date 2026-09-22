@@ -681,15 +681,16 @@ with col_form:
     )
 
     pegawai_id_terpilih = st.multiselect(
-        "Pegawai yang Melaksanakan Perjalanan Dinas",
-        options=list(pegawai_by_id.keys()),
-        format_func=lambda pegawai_id: format_label_pegawai(
-            pegawai_by_id[pegawai_id]
-        ),
-        key="pegawai_spd_multi",
-        placeholder="Pilih satu atau beberapa pegawai",
-        help="Anda dapat memilih pegawai dari bidang yang berbeda.",
-    )
+    "Pegawai yang Melaksanakan Perjalanan Dinas",
+    options=list(pegawai_by_id.keys()),
+    format_func=lambda pegawai_id: format_label_pegawai(
+        pegawai_by_id[pegawai_id]
+    ),
+    key="pegawai_spd_multi",
+    placeholder="Pilih satu atau beberapa pegawai",
+    width="stretch",
+    wrap=True,
+)
 
     pegawai_terpilih = [
         pegawai_by_id[pegawai_id]
