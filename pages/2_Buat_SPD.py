@@ -49,11 +49,6 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-
-    /* ======================================================
-       RESPONSIVE PAGE
-       ====================================================== */
-
     .block-container {
         max-width: 1500px;
         padding-top: 2rem;
@@ -62,11 +57,6 @@ st.markdown(
         padding-right: 3rem;
     }
 
-    /* ======================================================
-       FORM CONTROLS
-       ====================================================== */
-
-    div[data-testid="stMultiSelect"],
     div[data-testid="stTextInput"],
     div[data-testid="stTextArea"],
     div[data-testid="stDateInput"],
@@ -75,25 +65,9 @@ st.markdown(
         max-width: 100%;
     }
 
-    /* ======================================================
-       MULTISELECT PEGAWAI
-
-       Gunakan parameter resmi Streamlit `wrap=True` pada
-       st.multiselect(). Tidak menggunakan selector CSS
-       internal BaseWeb agar konsisten antar versi Streamlit.
-       ====================================================== */
-
-    /* ======================================================
-       BORDER / CONTAINER
-       ====================================================== */
-
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 10px;
     }
-
-    /* ======================================================
-       RESPONSIVE BREAKPOINTS
-       ====================================================== */
 
     @media (max-width: 1200px) {
         .block-container {
@@ -123,7 +97,6 @@ st.markdown(
             font-size: 1.6rem;
         }
     }
-
     </style>
     """,
     unsafe_allow_html=True,
@@ -379,6 +352,38 @@ def lepas_kunci_tte(owner_token):
         pass
 
 
+def is_peserta_pondok(pegawai):
+    """
+    Menentukan apakah pelaksana adalah peserta pondok pesantren.
+
+    Sesuai aturan aplikasi: jika pangkat DAN golongan/ruang kosong,
+    data dianggap sebagai peserta, bukan pegawai.
+    """
+    pangkat = str(pegawai.get("pangkat") or "").strip()
+    golongan = str(pegawai.get("gol_ruang") or "").strip()
+
+    return not pangkat and not golongan
+
+
+def get_nomor_identitas(pegawai):
+    """Mengambil NIK untuk peserta dan NIP untuk pegawai."""
+    if is_peserta_pondok(pegawai):
+        return str(
+            pegawai.get("nik")
+            or pegawai.get("NIK")
+            or ""
+        ).strip()
+
+    return str(
+        pegawai.get("nip") or ""
+    ).strip()
+
+
+def get_label_identitas(pegawai):
+    """Label identitas yang dipakai template: NIK. atau NIP."""
+    return "NIK." if is_peserta_pondok(pegawai) else "NIP."
+
+
 def get_pangkat_golongan(pegawai):
     pangkat = str(
         pegawai.get("pangkat") or ""
@@ -397,7 +402,7 @@ def get_pangkat_golongan(pegawai):
     if golongan and golongan != "-":
         return golongan
 
-    return ""
+    return "-"
 
 
 def get_jabatan_instansi(pegawai):
@@ -487,9 +492,8 @@ def format_label_pegawai(pegawai):
         pegawai.get("nama") or ""
     ).strip()
 
-    nip = str(
-        pegawai.get("nip") or ""
-    ).strip()
+    nomor_identitas = get_nomor_identitas(pegawai)
+    label_identitas = "NIK" if is_peserta_pondok(pegawai) else "NIP"
 
     bidang = str(
         pegawai.get("bidang") or ""
@@ -498,7 +502,7 @@ def format_label_pegawai(pegawai):
     if not bidang:
         bidang = "-"
 
-    return f"{nama} | NIP {nip} | {bidang}"
+    return f"{nama} | {label_identitas} {nomor_identitas} | {bidang}"
 
 
 # ============================================================
@@ -609,9 +613,8 @@ with col_form:
                     item.get("nama") or "-"
                 )
 
-                nip = str(
-                    item.get("nip") or "-"
-                )
+                nomor_identitas = get_nomor_identitas(item) or "-"
+                label_identitas = "NIK" if is_peserta_pondok(item) else "NIP"
 
                 bidang = str(
                     item.get("bidang") or "-"
@@ -625,7 +628,7 @@ with col_form:
                     f"""
 **{nomor}. {nama}**
 
-NIP: `{nip}`  
+{label_identitas}: `{nomor_identitas}`  
 Bidang: `{bidang}`  
 Pangkat/Gol: `{get_pangkat_golongan(item) or '-'}`  
 Jabatan: `{jabatan}`
@@ -1078,6 +1081,14 @@ Jabatan: `{jabatan}`
             )
 
 
+    for item in pegawai_terpilih:
+        if is_peserta_pondok(item) and not get_nomor_identitas(item):
+            error_list.append(
+                "NIK peserta belum tersedia untuk: "
+                + str(item.get("nama") or "-")
+            )
+
+
     # ========================================================
     # TUJUAN UTAMA
     # ========================================================
@@ -1248,8 +1259,14 @@ Jabatan: `{jabatan}`
 
         replacements[
             "${nip}"
-        ] = str(
-            data_pegawai.get("nip") or ""
+        ] = get_nomor_identitas(
+            data_pegawai
+        )
+
+        replacements[
+            "${label_identitas}"
+        ] = get_label_identitas(
+            data_pegawai
         )
 
         replacements[
@@ -1511,7 +1528,8 @@ if generate_btn:
                             pegawai.get("id") or ""
                         ),
                         "nama": pegawai.get("nama") or "",
-                        "nip": pegawai.get("nip") or "",
+                        "nip": get_nomor_identitas(pegawai),
+                        "label_identitas": get_label_identitas(pegawai),
                         "bidang": pegawai.get("bidang") or "",
                         "path": output_pdf,
                         "filename": f"{nama_file}.pdf",
@@ -1610,7 +1628,7 @@ if hasil_pdf_session:
         with col_nama:
             st.markdown(
                 f"**{item['nama']}**  \n"
-                f"NIP: `{item['nip']}`  \n"
+                f"{item.get('label_identitas') or 'NIP.'}: `{item['nip']}`  \n"
                 f"Bidang: `{item.get('bidang') or '-'}`"
             )
 
@@ -1686,7 +1704,7 @@ if hasil_pdf_session:
 
                 st.markdown(
                     f"**{nomor}. {item.get('nama') or '-'}**  \n"
-                    f"NIP: `{item.get('nip') or '-'}`  \n"
+                    f"{item.get('label_identitas') or 'NIP.'}: `{item.get('nip') or '-'}`  \n"
                     f"Bidang: `{item.get('bidang') or '-'}`  \n"
                     f"File: `{item.get('filename') or '-'}'"
                 )
@@ -1823,6 +1841,8 @@ if hasil_pdf_session:
                                         nama_tte,
                                     "nip":
                                         item.get("nip"),
+                                    "label_identitas":
+                                        item.get("label_identitas", "NIP."),
                                     "bidang":
                                         item.get("bidang"),
                                     "filename":

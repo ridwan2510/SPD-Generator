@@ -168,6 +168,16 @@ def get_all_pegawai():
             )
         ).strip()
 
+        # NIK dipakai bila data pelaksana adalah peserta pondok.
+        # Tetap toleran terhadap nama kolom "NIK" dari sumber data lama.
+        pegawai["nik"] = str(
+            pegawai.get(
+                "nik",
+                pegawai.get("NIK", "")
+            )
+            or ""
+        ).strip()
+
         hasil.append(
             pegawai
         )
