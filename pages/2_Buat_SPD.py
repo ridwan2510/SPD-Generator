@@ -78,116 +78,10 @@ st.markdown(
     /* ======================================================
        MULTISELECT PEGAWAI
 
-       Streamlit memakai BaseWeb/React-Select. Pada beberapa
-       versi Streamlit, container tag bukan direct child dari
-       [data-baseweb="select"], sehingga selector lama tidak
-       mengenai container flex yang sebenarnya.
-
-       Solusi: cari ValueContainer yang LANGSUNG mempunyai tag
-       pegawai dengan :has() lalu ubah layout-nya menjadi GRID.
-       Setiap tag mendapat satu baris penuh.
+       Gunakan parameter resmi Streamlit `wrap=True` pada
+       st.multiselect(). Tidak menggunakan selector CSS
+       internal BaseWeb agar konsisten antar versi Streamlit.
        ====================================================== */
-
-    div[data-testid="stMultiSelect"] {
-        width: 100% !important;
-        max-width: 100% !important;
-        min-width: 0 !important;
-        overflow: visible !important;
-    }
-
-    div[data-testid="stMultiSelect"] [data-baseweb="select"] {
-        width: 100% !important;
-        max-width: 100% !important;
-        min-width: 0 !important;
-        box-sizing: border-box !important;
-        overflow: visible !important;
-    }
-
-    /*
-       Ini adalah container yang berisi chip/tag + input.
-       Selector :has() membuat aturan ini tidak bergantung
-       pada class CSS BaseWeb yang berubah-ubah.
-    */
-    div[data-testid="stMultiSelect"]
-    [data-baseweb="select"] div:has(> [data-baseweb="tag"]) {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1fr) !important;
-        grid-auto-rows: min-content !important;
-        align-items: center !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        min-width: 0 !important;
-        box-sizing: border-box !important;
-        gap: 3px !important;
-        overflow: visible !important;
-    }
-
-    /*
-       SATU PEGAWAI = SATU BARIS.
-       Grid akan otomatis menempatkan tag berikutnya
-       ke row berikutnya.
-    */
-    div[data-testid="stMultiSelect"]
-    [data-baseweb="select"] div:has(> [data-baseweb="tag"])
-    > [data-baseweb="tag"] {
-        display: flex !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        min-width: 0 !important;
-        box-sizing: border-box !important;
-        margin: 0 !important;
-        overflow: hidden !important;
-    }
-
-    /* Isi teks chip tidak boleh mendorong container ke kanan. */
-    div[data-testid="stMultiSelect"]
-    [data-baseweb="select"] [data-baseweb="tag"] > div {
-        flex: 1 1 auto !important;
-        min-width: 0 !important;
-        max-width: calc(100% - 28px) !important;
-        overflow: hidden !important;
-    }
-
-    div[data-testid="stMultiSelect"]
-    [data-baseweb="select"] [data-baseweb="tag"] span {
-        display: block !important;
-        min-width: 0 !important;
-        max-width: 100% !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        white-space: nowrap !important;
-    }
-
-    /* Tombol X tidak ikut mengecil. */
-    div[data-testid="stMultiSelect"]
-    [data-baseweb="select"] [data-baseweb="tag"] button,
-    div[data-testid="stMultiSelect"]
-    [data-baseweb="select"] [data-baseweb="tag"] svg {
-        flex: 0 0 auto !important;
-        flex-shrink: 0 !important;
-    }
-
-    /*
-       Input pencarian tetap berada setelah daftar tag.
-       Karena parent sudah grid, input otomatis mendapat
-       baris sendiri setelah tag terakhir.
-    */
-    div[data-testid="stMultiSelect"]
-    [data-baseweb="select"] input {
-        width: 100% !important;
-        max-width: 100% !important;
-        min-width: 0 !important;
-        box-sizing: border-box !important;
-        grid-column: 1 !important;
-    }
-
-    /* Cegah child BaseWeb membuat horizontal overflow. */
-    div[data-testid="stMultiSelect"] * {
-        box-sizing: border-box;
-    }
-
-    /* Jangan sembunyikan overflow pada wrapper utama karena
-       dropdown option tetap harus bisa muncul. */
 
     /* ======================================================
        BORDER / CONTAINER
@@ -681,16 +575,17 @@ with col_form:
     )
 
     pegawai_id_terpilih = st.multiselect(
-    "Pegawai yang Melaksanakan Perjalanan Dinas",
-    options=list(pegawai_by_id.keys()),
-    format_func=lambda pegawai_id: format_label_pegawai(
-        pegawai_by_id[pegawai_id]
-    ),
-    key="pegawai_spd_multi",
-    placeholder="Pilih satu atau beberapa pegawai",
-    width="stretch",
-    wrap=True,
-)
+        "Pegawai yang Melaksanakan Perjalanan Dinas",
+        options=list(pegawai_by_id.keys()),
+        format_func=lambda pegawai_id: format_label_pegawai(
+            pegawai_by_id[pegawai_id]
+        ),
+        key="pegawai_spd_multi",
+        placeholder="Pilih satu atau beberapa pegawai",
+        help="Anda dapat memilih pegawai dari bidang yang berbeda.",
+        width="stretch",
+        wrap=True,
+    )
 
     pegawai_terpilih = [
         pegawai_by_id[pegawai_id]
