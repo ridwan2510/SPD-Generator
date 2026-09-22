@@ -352,24 +352,35 @@ def lepas_kunci_tte(owner_token):
         pass
 
 
+def get_status_pegawai(pegawai):
+    """Mengambil status pegawai secara konsisten."""
+    return str(
+        pegawai.get("status_pegawai") or ""
+    ).strip().upper()
+
+
+def is_non_pegawai(pegawai):
+    """True jika data ditandai sebagai NON PEGAWAI."""
+    return get_status_pegawai(pegawai) == "NON PEGAWAI"
+
+
 def is_peserta_pondok(pegawai):
     """
-    Menentukan apakah pelaksana adalah peserta pondok pesantren.
+    Kompatibilitas nama fungsi lama.
 
-    Sesuai aturan aplikasi: jika pangkat DAN golongan/ruang kosong,
-    data dianggap sebagai peserta, bukan pegawai.
+    Data NON PEGAWAI menggunakan kolom `nip` untuk menyimpan NIK.
     """
-    pangkat = str(pegawai.get("pangkat") or "").strip()
-    golongan = str(pegawai.get("gol_ruang") or "").strip()
-
-    return not pangkat and not golongan
+    return is_non_pegawai(pegawai)
 
 
 def get_nomor_identitas(pegawai):
-    """Mengambil NIK untuk peserta dan NIP untuk pegawai."""
-    if is_peserta_pondok(pegawai):
+    """Mengambil NIK untuk NON PEGAWAI dan NIP untuk pegawai."""
+    # Struktur master tetap menggunakan satu kolom `nip`.
+    # Fallback nik/NIK dipertahankan agar data lama tetap terbaca.
+    if is_non_pegawai(pegawai):
         return str(
-            pegawai.get("nik")
+            pegawai.get("nip")
+            or pegawai.get("nik")
             or pegawai.get("NIK")
             or ""
         ).strip()

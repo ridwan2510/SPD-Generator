@@ -1084,7 +1084,7 @@ with tab_tambah:
                 "PPPK",
                 "CPNS",
                 "PPPK PARUH WAKTU",
-                "-"
+                "NON PEGAWAI"
             ],
             key="tambah_status"
         )
@@ -1147,15 +1147,15 @@ with tab_tambah:
                         key="tambah_gol_cpns"
                     )
 
-        elif status_baru == "-":
+        elif status_baru in ["NON PEGAWAI", "-"]:
 
             gol_baru = "-"
 
             st.text_input(
-            "Golongan / Ruang",
-            value="-",
-            disabled=True,
-            key="tambah_gol_luar"
+                "Golongan / Ruang",
+                value="-",
+                disabled=True,
+                key="tambah_gol_luar"
             )
         
         else:
@@ -1243,7 +1243,7 @@ with tab_tambah:
         if not nip_clean:
 
             error.append(
-                "NIP wajib diisi."
+                "NIP / NIK wajib diisi."
             )
 
         if not nama_clean:
@@ -1259,7 +1259,7 @@ with tab_tambah:
         ):
 
             error.append(
-                "NIP hanya boleh "
+                "NIP / NIK hanya boleh "
                 "berisi angka."
             )
 
@@ -1458,7 +1458,7 @@ with tab_edit:
             "PPPK",
             "CPNS",
             "PPPK PARUH WAKTU",
-            "-"
+            "NON PEGAWAI"
         ]
 
         if (
@@ -1494,7 +1494,7 @@ with tab_edit:
         with col1:
 
             edit_nip = st.text_input(
-                "NIP *",
+                "NIP / NIK *",
                 value=format_nip(
                     selected.get(
                         "nip"
@@ -1612,10 +1612,29 @@ with tab_edit:
                     )
                 )
 
+            elif edit_status == "NON PEGAWAI":
+
+                edit_gol = "-"
+                edit_pangkat = "-"
+
+                st.text_input(
+                    "Golongan / Ruang",
+                    value="-",
+                    disabled=True,
+                    key=f"edit_gol_luar_{selected_id}"
+                )
+
+                st.text_input(
+                    "Pangkat",
+                    value="-",
+                    disabled=True,
+                    key=f"edit_pangkat_luar_{selected_id}"
+                )
+
             else:
 
                 # ============================================
-                # PPPK / PPPK PARUH WAKTU / EKSTERNAL
+                # PPPK / PPPK PARUH WAKTU / STATUS LAMA LAINNYA
                 # Golongan dan pangkat tidak memakai mapping PNS.
                 # ============================================
 
@@ -1757,7 +1776,7 @@ with tab_edit:
             if not edit_nip_clean:
 
                 error.append(
-                    "NIP wajib diisi."
+                    "NIP / NIK wajib diisi."
                 )
 
             if not edit_nama_clean:
@@ -1773,7 +1792,7 @@ with tab_edit:
             ):
 
                 error.append(
-                    "NIP hanya boleh "
+                    "NIP / NIK hanya boleh "
                     "berisi angka."
                 )
 
