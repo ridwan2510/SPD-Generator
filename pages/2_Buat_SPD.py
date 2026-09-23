@@ -455,7 +455,7 @@ def cari_kepala_kanwil(pegawai_list):
             pegawai.get("jabatan") or ""
         ).strip().lower()
 
-        if "kepala kanwil" in jabatan:
+        if "Kepala Kantor Wilayah" in jabatan:
             return pegawai
 
     return None
