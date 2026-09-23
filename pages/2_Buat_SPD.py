@@ -536,87 +536,123 @@ def buat_zip_pdf(file_pdf_list):
 
 def nama_tte_tanpa_gelar(nama):
     """
-    Menghapus seluruh gelar depan dan belakang dari nama hanya untuk
-    placeholder ${nama} dan perihal TTE. Nama asli pada Master
-    Pegawai, ${namakepala}, dan ${namappk} tidak diubah.
+    Mengambil nama inti tanpa gelar untuk ${nama} dan Perihal TTE.
 
-    Fungsi sengaja memproses gelar belakang berulang kali dari ujung
-    nama sehingga format seperti berikut juga terbaca:
-        Nama, S.Kom.
-        Nama, S.Kom, SH.M.Hum
-        Nama, S.Ag. M.Pd.I
-        Nama, S.E., M.Si.
+    Nama asli pada Master Pegawai, ${namakepala}, dan ${namappk}
+    tidak diubah.
+
+    Menangani antara lain:
+        Dr. H. SAIFUL MUJAB, M.A.
+        Dr. H. NURZAINI WAHYU WIDODO, S.Kom, SH.M.Hum
+        Dr. MOCH FATHURONJI, S.Ag. M.Pd.I
+        Prof. Dr. BUDI SANTOSO, S.E., M.Si.
+        NAMA S.Kom SH.M.Hum
     """
-    nama = str(nama or "").strip()
+    nama = re.sub(r"\s+", " ", str(nama or "").strip())
 
     if not nama:
         return "Pegawai"
 
     # --------------------------------------------------------
-    # Gelar depan. Diproses berulang karena satu nama dapat
-    # memiliki beberapa gelar depan, misalnya: Dr. H. Nama
+    # GELAR DEPAN - dapat lebih dari satu.
     # --------------------------------------------------------
-    gelar_depan = [
-        "Prof.",
-        "Dr.",
-        "Drs.",
-        "Dra.",
-        "Ir.",
-        "Hj.",
-        "H.",
-    ]
+    gelar_depan = {
+        "prof", "prof.",
+        "dr", "dr.",
+        "drs", "drs.",
+        "dra", "dra.",
+        "ir", "ir.",
+        "h", "h.",
+        "hj", "hj.",
+    }
 
-    berubah = True
-    while berubah:
-        berubah = False
-        nama = nama.strip(" ,.;")
+    while True:
+        parts = nama.split(" ", 1)
+        token = parts[0].strip(" ,.;")
+        if token.casefold() in {x.casefold() for x in gelar_depan}:
+            nama = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            break
 
-        for gelar in gelar_depan:
-            pola = rf"^{re.escape(gelar)}(?:\s+|$)"
-            nama_baru = re.sub(
-                pola,
-                "",
-                nama,
-                count=1,
-                flags=re.IGNORECASE,
-            ).strip(" ,.;")
-
-            if nama_baru != nama:
-                nama = nama_baru
-                berubah = True
-                break
+    if not nama:
+        return "Pegawai"
 
     # --------------------------------------------------------
-    # Gelar belakang. Pola dibuat fleksibel terhadap titik/koma
-    # yang menempel, misalnya SH.M.Hum atau S.Kom, SH, M.Hum.
+    # KASUS PALING UMUM: setelah koma adalah gelar belakang.
+    # Ini sekaligus menangani banyak gelar sekaligus, misalnya:
+    #   Nama, S.Kom, SH.M.Hum
+    #   Nama, S.Ag. M.Pd.I
     # --------------------------------------------------------
-    gelar_belakang = [
+    if "," in nama:
+        nama_utama = nama.split(",", 1)[0].strip(" ,.;")
+        if nama_utama:
+            return nama_utama
+
+    # --------------------------------------------------------
+    # Gelar belakang tanpa koma. Diproses berulang dari belakang.
+    # Pola panjang diletakkan lebih dulu agar SH.M.Hum dibuang
+    # sebagai satu suffix, kemudian suffix lain juga diproses.
+    # --------------------------------------------------------
+    suffixes = [
+        # kombinasi yang umum
         r"S\.I\.Kom", r"S\.I\.P", r"S\.I\.K",
-        r"S\.Kom", r"S\.Ag", r"S\.E", r"S\.H", r"S\.Sos",
-        r"S\.T", r"S\.Pd", r"S\.Sn", r"S\.Stat", r"S\.Farm",
-        r"S\.Psi", r"S\.Fil", r"S\.Hum", r"S\.M",
-        r"SKom", r"SAg", r"SE", r"SH", r"ST",
-        r"M\.Pd\.Kons", r"M\.Pd\.I", r"M\.Pd", r"M\.Si",
-        r"M\.A", r"M\.H", r"M\.Ag", r"M\.T", r"M\.Kom",
-        r"M\.Sos", r"M\.Hum", r"M\.I\.Kom", r"M\.I\.P",
-        r"M\.Sc", r"M\.Ed", r"M\.Sn", r"M\.Farm", r"M\.Psi",
-        r"M\.Fil", r"M\.Hk", r"M\.P", r"Ph\.D", r"PhD",
+        r"S\.Kom",
+        r"S\.Ag",
+        r"S\.E",
+        r"S\.H",
+        r"S\.Sos",
+        r"S\.T",
+        r"S\.Pd",
+        r"S\.Sn",
+        r"S\.Stat",
+        r"S\.Farm",
+        r"S\.Psi",
+        r"S\.Fil",
+        r"S\.Hum",
+        r"M\.Pd\.Kons",
+        r"M\.Pd\.I",
+        r"M\.Pd",
+        r"M\.Si",
+        r"M\.Ag",
+        r"M\.Hum",
+        r"M\.Kom",
+        r"M\.Sos",
+        r"M\.I\.Kom",
+        r"M\.I\.P",
+        r"M\.Sc",
+        r"M\.Ed",
+        r"M\.Sn",
+        r"M\.Farm",
+        r"M\.Psi",
+        r"M\.Fil",
+        r"M\.Hk",
+        r"M\.H",
+        r"M\.T",
+        r"M\.A",
+        r"Ph\.D",
+        # bentuk tanpa titik
+        r"SKom", r"SAg", r"SE", r"SH", r"SSos", r"ST", r"SPd",
+        r"MHum", r"MPdI", r"MPd", r"MSi", r"MAg", r"MKom", r"MSos",
+        r"MH", r"MT", r"MA", r"MSc", r"MEd",
+        # bentuk gabungan yang sering ditemukan tanpa koma
+        r"SH\.M\.Hum",
+        r"SH\.MH",
+        r"S\.H\.M\.Hum",
+        r"S\.Kom\.M\.Si",
+        r"S\.Kom\.M\.Hum",
     ]
-    gelar_belakang.sort(key=len, reverse=True)
+    suffixes.sort(key=len, reverse=True)
 
     berubah = True
     while berubah:
         berubah = False
         nama = nama.strip(" ,.;")
 
-        for pola_gelar in gelar_belakang:
-            # Anchor ke AKHIR nama. Separator dibuat opsional agar
-            # format SH.M.Hum juga bisa diurai satu per satu.
-            pola = (
-                rf"(?:[\s,.;]+)?{pola_gelar}\.?(?=$|[\s,.;])"
-                rf"[\s,.;]*$"
-            )
-
+        for suffix in suffixes:
+            # Suffix harus berada di akhir dan harus dipisahkan dari
+            # nama oleh spasi atau tanda baca. Ini mencegah bagian
+            # nama biasa ikut terpotong.
+            pola = rf"(?:^|[\s,;]+){suffix}\.?[\s,;\.]*$"
             nama_baru = re.sub(
                 pola,
                 "",
@@ -630,9 +666,7 @@ def nama_tte_tanpa_gelar(nama):
                 berubah = True
                 break
 
-    nama = re.sub(r"\s{2,}", " ", nama).strip(" ,.;")
     return nama or "Pegawai"
-
 
 def format_label_pegawai(pegawai):
     nama = str(
