@@ -446,7 +446,7 @@ def cari_kepala_kanwil(pegawai_list):
             pegawai.get("jabatan") or ""
         ).strip().lower()
 
-        if jabatan == "kepala kanwil":
+        if jabatan == "Kepala Kantor Wilayah":
             return pegawai
 
     # Fallback untuk data jabatan yang lebih panjang.
