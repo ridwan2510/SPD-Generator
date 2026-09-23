@@ -371,7 +371,7 @@ def get_kepala():
 
         if (
             jabatan ==
-            "kepala kantor wilayah"
+            "kepala kanwil"
             and
             status ==
             "aktif"

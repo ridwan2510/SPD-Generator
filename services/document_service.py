@@ -80,6 +80,41 @@ def _replace_in_paragraph(paragraph, replacements):
 
 def _replace_in_table(table, replacements):
     for row in table.rows:
+        # Beberapa versi template SPD memiliki sel nilai Pangkat dan
+        # Golongan yang benar-benar kosong (tidak memiliki placeholder).
+        # Jika labelnya ditemukan pada baris yang sama, isi sel nilai
+        # dengan ${pangkatgolongan}. Ini membuat template lama maupun
+        # template baru tetap menghasilkan tanda "-" ketika data kosong.
+        label_row_text = " ".join(
+            str(cell.text or "").strip()
+            for cell in row.cells
+        ).casefold()
+
+        if "pangkat dan golongan" in label_row_text:
+            nilai = replacements.get("${pangkatgolongan}")
+            if nilai is None:
+                nilai = replacements.get("${pangkat_golongan}")
+
+            # Jangan memaksa tanda "-" di level template.
+            # Nilai "-" hanya diberikan oleh 2_Buat_SPD.py untuk
+            # status yang memang berada di luar CPNS/PNS/PPPK/
+            # PPPK PARUH WAKTU.
+            nilai = "" if nilai is None else str(nilai).strip()
+
+            # Pada template SPD saat ini, tiga sel pertama adalah label
+            # (akibat merge) dan tiga sel berikutnya adalah area nilai.
+            # Isi semua sel nilai yang kosong agar ketiganya konsisten.
+            for cell in row.cells[1:]:
+                cell_text = str(cell.text or "").strip()
+                if not cell_text:
+                    paragraph = cell.paragraphs[0]
+                    if paragraph.runs:
+                        paragraph.runs[0].text = nilai
+                        for run in paragraph.runs[1:]:
+                            run.text = ""
+                    else:
+                        paragraph.add_run(nilai)
+
         for cell in row.cells:
             for paragraph in cell.paragraphs:
                 _replace_in_paragraph(paragraph, replacements)
