@@ -438,7 +438,7 @@ def get_jabatan_instansi(pegawai):
 
 
 def cari_kepala_kanwil(pegawai_list):
-    """Mencari Kepala Kanwil dari master pegawai."""
+    """Mencari Kepala Kantor Wilayah dari master pegawai."""
 
     # Prioritas exact match.
     for pegawai in pegawai_list:
@@ -543,11 +543,11 @@ kepala = cari_kepala_kanwil(
 
 if not kepala:
     st.warning(
-        "Data Kepala Kanwil belum ditemukan."
+        "Data Kepala Kantor Wilayah belum ditemukan."
     )
     st.info(
         "Pastikan pada Master Pegawai terdapat pegawai "
-        "dengan jabatan `Kepala Kanwil`."
+        "dengan jabatan `Kepala Kantor Wilayah`."
     )
     st.stop()
 
@@ -815,13 +815,13 @@ Jabatan: `{jabatan}`
     # ========================================================
 
     st.divider()
-    st.subheader("3. Kepala Kanwil")
+    st.subheader("3. Kepala Kantor Wilayah")
 
     col_kepala1, col_kepala2 = st.columns(2)
 
     with col_kepala1:
         st.text_input(
-            "Nama Kepala Kanwil",
+            "Nama Kepala Kantor Wilayah",
             value=str(
                 kepala.get("nama") or ""
             ),
@@ -831,7 +831,7 @@ Jabatan: `{jabatan}`
 
     with col_kepala2:
         st.text_input(
-            "NIP Kepala Kanwil",
+            "NIP Kepala Kantor Wilayah",
             value=str(
                 kepala.get("nip") or ""
             ),
