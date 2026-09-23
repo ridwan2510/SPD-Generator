@@ -437,22 +437,60 @@ def lepas_kunci_tte(owner_token):
 
 
 def get_pangkat_golongan(pegawai):
+    """
+    Mengambil data pangkat/golongan dengan beberapa nama field.
+
+    Aturan tampilan:
+    - CPNS, PNS, PPPK, PPPK PARUH WAKTU:
+      jika pangkat/golongan tidak tersedia, biarkan kosong.
+    - Status selain empat status tersebut (mis. PEGAWAI dan
+      NON PEGAWAI): jika keduanya tidak tersedia, tampilkan "-".
+    """
+
+    status_pegawai = str(
+        pegawai.get("status_pegawai") or ""
+    ).strip().upper()
+
+    status_asn = {
+        "CPNS",
+        "PNS",
+        "PPPK",
+        "PPPK PARUH WAKTU",
+    }
+
     pangkat = str(
-        pegawai.get("pangkat") or ""
+        pegawai.get("pangkat")
+        or pegawai.get("pangkat_golongan")
+        or ""
     ).strip()
 
     golongan = str(
-        pegawai.get("gol_ruang") or ""
+        pegawai.get("gol_ruang")
+        or pegawai.get("golongan")
+        or pegawai.get("gol")
+        or ""
     ).strip()
 
-    if pangkat and pangkat != "-" and golongan and golongan != "-":
+    # Anggap nilai kosong/placeholder sebagai kosong.
+    if pangkat in ("", "-", "None", "null"):
+        pangkat = ""
+
+    if golongan in ("", "-", "None", "null"):
+        golongan = ""
+
+    if pangkat and golongan:
         return f"{pangkat} / {golongan}"
 
-    if pangkat and pangkat != "-":
+    if pangkat:
         return pangkat
 
-    if golongan and golongan != "-":
+    if golongan:
         return golongan
+
+    # Hanya status di luar CPNS/PNS/PPPK/PPPK PARUH WAKTU
+    # yang mendapatkan tanda "-" saat data pangkat/golongan kosong.
+    if status_pegawai not in status_asn:
+        return "-"
 
     return ""
 
@@ -824,7 +862,7 @@ with col_form:
 
 NIP: `{nip}`  
 Bidang: `{bidang}`  
-Pangkat/Gol: `{get_pangkat_golongan(item) or '-'}`  
+Pangkat/Gol: `{get_pangkat_golongan(item)}`  
 Jabatan: `{jabatan}`
 """
                 )
@@ -1471,11 +1509,79 @@ Jabatan: `{jabatan}`
             "${label_identitas}"
         ] = label_identitas
 
-        replacements[
-            "${pangkatgolongan}"
-        ] = get_pangkat_golongan(
+        pangkat_golongan = get_pangkat_golongan(
             data_pegawai
         )
+
+        # Peserta luar / NON PEGAWAI dapat tidak memiliki
+        # pangkat dan golongan. Untuk dokumen SPD, tampilkan
+        # tanda "-" agar kolom tidak kosong.
+        status_pegawai_replacement = str(
+            data_pegawai.get("status_pegawai") or ""
+        ).strip().upper()
+
+        if (
+            status_pegawai_replacement == "NON PEGAWAI"
+            and not str(pangkat_golongan or "").strip()
+        ):
+            pangkat_golongan = "-"
+
+        # Template lama/baru mungkin menggunakan nama placeholder
+        # yang berbeda. Isi semuanya dengan nilai yang sama supaya
+        # kolom Pangkat dan Golongan tidak pernah kosong.
+        replacements[
+            "${pangkatgolongan}"
+        ] = pangkat_golongan
+        replacements[
+            "${pangkat_golongan}"
+        ] = pangkat_golongan
+        replacements[
+            "${pangkatgolonganpegawai}"
+        ] = pangkat_golongan
+        status_pegawai_pengganti = str(
+            data_pegawai.get("status_pegawai") or ""
+        ).strip().upper()
+
+        status_asn_pengganti = {
+            "CPNS",
+            "PNS",
+            "PPPK",
+            "PPPK PARUH WAKTU",
+        }
+
+        nilai_pangkat = str(
+            data_pegawai.get("pangkat") or ""
+        ).strip()
+
+        nilai_golongan = str(
+            data_pegawai.get("gol_ruang")
+            or data_pegawai.get("golongan")
+            or data_pegawai.get("gol")
+            or ""
+        ).strip()
+
+        if nilai_pangkat in ("-", "None", "null"):
+            nilai_pangkat = ""
+
+        if nilai_golongan in ("-", "None", "null"):
+            nilai_golongan = ""
+
+        # Untuk status di luar empat status ASN, field kosong
+        # ditampilkan sebagai "-". Untuk CPNS/PNS/PPPK/PPPK
+        # PARUH WAKTU, field kosong tetap kosong.
+        nilai_kosong = (
+            ""
+            if status_pegawai_pengganti in status_asn_pengganti
+            else "-"
+        )
+
+        replacements[
+            "${pangkat}"
+        ] = nilai_pangkat or nilai_kosong
+
+        replacements[
+            "${golongan}"
+        ] = nilai_golongan or nilai_kosong
 
         replacements[
             "${jabataninstansi}"
