@@ -1377,9 +1377,12 @@ Jabatan: `{jabatan}`
     ):
         replacements = replacements_dasar.copy()
 
+        # Nama pegawai pada placeholder ${nama} ditampilkan tanpa gelar.
+        # Placeholder lain seperti ${namakepala} dan ${namappk}
+        # tetap menggunakan nama asli lengkap beserta gelarnya.
         replacements[
             "${nama}"
-        ] = str(
+        ] = nama_tte_tanpa_gelar(
             data_pegawai.get("nama") or ""
         )
 
@@ -1388,6 +1391,22 @@ Jabatan: `{jabatan}`
         ] = str(
             data_pegawai.get("nip") or ""
         )
+
+        # Label identitas mengikuti status pegawai.
+        # NON PEGAWAI menggunakan NIK, selain itu menggunakan NIP.
+        status_pegawai = str(
+            data_pegawai.get("status_pegawai") or ""
+        ).strip().upper()
+
+        label_identitas = (
+            "NIK."
+            if status_pegawai == "NON PEGAWAI"
+            else "NIP."
+        )
+
+        replacements[
+            "${label_identitas}"
+        ] = label_identitas
 
         replacements[
             "${pangkatgolongan}"
