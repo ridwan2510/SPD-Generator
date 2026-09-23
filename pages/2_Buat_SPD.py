@@ -536,15 +536,19 @@ def buat_zip_pdf(file_pdf_list):
 
 def nama_tte_tanpa_gelar(nama):
     """
-    Menghapus gelar umum hanya untuk nama pada Perihal TTE.
-    Nama asli pada Master Pegawai dan dokumen SPD tidak diubah.
+    Menghapus gelar depan dan belakang dari nama hanya untuk
+    placeholder ${nama} dan perihal TTE. Nama asli pada Master
+    Pegawai, ${namakepala}, dan ${namappk} tidak diubah.
     """
     nama = str(nama or "").strip()
 
     if not nama:
         return "Pegawai"
 
-    # Gelar depan yang umum.
+    # --------------------------------------------------------
+    # Gelar depan. Diproses berulang karena satu nama dapat
+    # memiliki beberapa gelar depan, misalnya: Dr. H. Nama
+    # --------------------------------------------------------
     gelar_depan = [
         "Prof.",
         "Dr.",
@@ -558,48 +562,12 @@ def nama_tte_tanpa_gelar(nama):
     berubah = True
     while berubah:
         berubah = False
+
+        nama = nama.strip(" ,.")
+
         for gelar in gelar_depan:
-            pola = rf"^{re.escape(gelar)}\s+"
-            nama_baru = re.sub(
-                pola,
-                "",
-                nama,
-                count=1,
-                flags=re.IGNORECASE,
-            ).strip()
+            pola = rf"^{re.escape(gelar)}(?:\s+|$)"
 
-            if nama_baru != nama:
-                nama = nama_baru
-                berubah = True
-                break
-
-    # Gelar belakang umum. Dibuat bertahap agar kombinasi seperti
-    # ", S.Ag. M.Pd.I" juga dapat dibersihkan.
-    gelar_belakang = [
-        r"S\.Kom\.?",
-        r"S\.Ag\.?",
-        r"S\.E\.?",
-        r"S\.H\.?",
-        r"S\.Sos\.?",
-        r"S\.T\.?",
-        r"S\.Pd\.?",
-        r"M\.Pd\.I\.?",
-        r"M\.Pd\.?",
-        r"M\.Si\.?",
-        r"M\.A\.?",
-        r"M\.H\.?",
-        r"M\.Ag\.?",
-        r"M\.T\.?",
-        r"M\.Kom\.?",
-        r"M\.Sos\.?",
-    ]
-
-    berubah = True
-    while berubah:
-        berubah = False
-
-        for pola_gelar in gelar_belakang:
-            pola = rf"(?:,\s*|\s+){pola_gelar}\s*$"
             nama_baru = re.sub(
                 pola,
                 "",
@@ -613,7 +581,104 @@ def nama_tte_tanpa_gelar(nama):
                 berubah = True
                 break
 
-    return nama
+    # --------------------------------------------------------
+    # Gelar belakang. Daftar dibuat cukup luas untuk format
+    # yang umum digunakan pada data pegawai, termasuk: 
+    # S.Kom, S.Ag, SH, M.Hum, M.Pd.I, M.A, dan sebagainya.
+    # --------------------------------------------------------
+    gelar_belakang = [
+        r"S\.Kom",
+        r"S\.Ag",
+        r"S\.E",
+        r"S\.H",
+        r"S\.Sos",
+        r"S\.T",
+        r"S\.Pd",
+        r"S\.I\.Kom",
+        r"S\.I\.P",
+        r"S\.Sn",
+        r"S\.Stat",
+        r"S\.Farm",
+        r"S\.Psi",
+        r"S\.Fil",
+        r"S\.Hum",
+        r"S\.M",
+        r"SH",
+        r"SE",
+        r"ST",
+        r"SAg",
+        r"SKom",
+        r"M\.Pd\.I",
+        r"M\.Pd",
+        r"M\.Si",
+        r"M\.A",
+        r"M\.H",
+        r"M\.Ag",
+        r"M\.T",
+        r"M\.Kom",
+        r"M\.Sos",
+        r"M\.Hum",
+        r"M\.I\.Kom",
+        r"M\.I\.P",
+        r"M\.Sc",
+        r"M\.Ed",
+        r"M\.Sn",
+        r"M\.Farm",
+        r"M\.Psi",
+        r"M\.Fil",
+        r"M\.Hk",
+        r"M\.Pd\.Kons",
+        r"M\.P",
+        r"Ph\.D",
+        r"PhD",
+    ]
+
+    # Urutkan dari yang paling panjang agar M.Pd.I diproses
+    # sebelum M.Pd, dan S.I.Kom sebelum S.I.
+    gelar_belakang.sort(key=len, reverse=True)
+
+    berubah = True
+    while berubah:
+        berubah = False
+
+        # Hilangkan tanda baca pemisah yang tertinggal di ujung.
+        nama = nama.strip(" ,.")
+
+        for pola_gelar in gelar_belakang:
+            # Menerima format:
+            #   Nama, S.Kom.
+            #   Nama S.Kom
+            #   Nama, S.Ag. M.Pd.I
+            #   Nama S.Kom, SH, M.Hum
+            pola = (
+                rf"(?:^|[\s,;.]+)"
+                rf"{pola_gelar}\.?"
+                rf"(?=$|[\s,;.]+)"
+            )
+
+            nama_baru = re.sub(
+                pola,
+                " ",
+                nama,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+
+            nama_baru = re.sub(
+                r"[\s,;]+$",
+                "",
+                nama_baru,
+            ).strip()
+
+            if nama_baru != nama:
+                nama = nama_baru
+                berubah = True
+                break
+
+    # Rapikan spasi/pemisah yang tersisa.
+    nama = re.sub(r"\s{2,}", " ", nama).strip(" ,.;")
+
+    return nama or "Pegawai"
 
 
 def format_label_pegawai(pegawai):
