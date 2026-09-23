@@ -260,6 +260,17 @@ if "zip_spd_filename" not in st.session_state:
 if "hasil_tte_spd" not in st.session_state:
     st.session_state["hasil_tte_spd"] = []
 
+# Antrean TTE dibuat bertahap agar batch besar tidak bergantung
+# pada satu eksekusi Streamlit yang terlalu lama.
+if "tte_batch_signature" not in st.session_state:
+    st.session_state["tte_batch_signature"] = ""
+
+if "tte_next_index" not in st.session_state:
+    st.session_state["tte_next_index"] = 0
+
+if "tte_batch_results" not in st.session_state:
+    st.session_state["tte_batch_results"] = []
+
 
 # ============================================================
 # HELPER
@@ -1974,13 +1985,107 @@ if hasil_pdf_session:
             key="konfirmasi_tte_pd_pontren",
         )
 
-        if st.button(
-            "✍️ Ajukan Semua PD Pontren ke TTE Kemenag",
-            type="primary",
-            use_container_width=True,
-            disabled=not konfirmasi_tte,
-            key="btn_ajukan_semua_tte_pd_pontren",
+        # ====================================================
+        # ANTREAN TTE BERTAHAP
+        # ====================================================
+        # Batasi jumlah dokumen dalam satu eksekusi. Ini membuat
+        # pengajuan batch besar lebih aman terhadap timeout koneksi
+        # atau runtime Streamlit. Setelah satu batch selesai, user
+        # cukup menekan tombol yang sama untuk melanjutkan.
+        TTE_BATCH_SIZE = 10
+
+        signature_parts = []
+        for item in hasil_pdf_tte:
+            signature_parts.append(
+                "|".join(
+                    [
+                        str(item.get("pegawai_id") or ""),
+                        str(item.get("filename") or ""),
+                        str(item.get("path") or ""),
+                    ]
+                )
+            )
+
+        tte_signature = "\n".join(signature_parts)
+
+        if (
+            st.session_state.get("tte_batch_signature")
+            != tte_signature
         ):
+            st.session_state["tte_batch_signature"] = tte_signature
+            st.session_state["tte_next_index"] = 0
+            st.session_state["tte_batch_results"] = []
+            st.session_state["hasil_tte_spd"] = []
+
+        tte_next_index = int(
+            st.session_state.get("tte_next_index", 0) or 0
+        )
+
+        tte_results = list(
+            st.session_state.get("tte_batch_results", []) or []
+        )
+
+        total_tte = len(hasil_pdf_tte)
+        selesai_tte = min(tte_next_index, total_tte)
+        sisa_tte = max(total_tte - selesai_tte, 0)
+
+        if sisa_tte > 0:
+            jumlah_batch_sekarang = min(
+                TTE_BATCH_SIZE,
+                sisa_tte,
+            )
+
+            label_tombol_tte = (
+                "✍️ Ajukan TTE "
+                f"({selesai_tte + 1}-{selesai_tte + jumlah_batch_sekarang}"
+                f" dari {total_tte})"
+            )
+        else:
+            label_tombol_tte = "✅ Semua Dokumen Sudah Diproses"
+
+        col_tte_action1, col_tte_action2 = st.columns(2)
+
+        with col_tte_action1:
+            tombol_lanjut_tte = st.button(
+                label_tombol_tte,
+                type="primary",
+                use_container_width=True,
+                disabled=(
+                    not konfirmasi_tte
+                    or sisa_tte == 0
+                ),
+                key="btn_ajukan_lanjut_tte_pd_pontren",
+            )
+
+        with col_tte_action2:
+            tombol_reset_tte = st.button(
+                "🔄 Mulai Ulang Antrean TTE",
+                use_container_width=True,
+                disabled=(not tte_results),
+                key="btn_reset_antrean_tte_pd_pontren",
+            )
+
+        if tombol_reset_tte:
+            st.session_state["tte_next_index"] = 0
+            st.session_state["tte_batch_results"] = []
+            st.session_state["hasil_tte_spd"] = []
+            st.rerun()
+
+        if tte_results:
+            berhasil_sebelumnya = sum(
+                1
+                for item in tte_results
+                if item.get("sukses")
+            )
+            gagal_sebelumnya = len(tte_results) - berhasil_sebelumnya
+
+            st.caption(
+                f"Status antrean: {selesai_tte}/{total_tte} sudah diproses "
+                f"· {berhasil_sebelumnya} berhasil · "
+                f"{gagal_sebelumnya} gagal."
+            )
+
+        if tombol_lanjut_tte:
 
             lock_berhasil, lock_info = coba_kunci_tte()
 
@@ -1991,21 +2096,30 @@ if hasil_pdf_session:
                 owner_token_tte = lock_info
 
                 try:
-                    total_tte = len(hasil_pdf_tte)
-                    berhasil_tte = 0
-                    gagal_tte = 0
-                    hasil_tte = []
+                    mulai = int(
+                        st.session_state.get("tte_next_index", 0) or 0
+                    )
+                    akhir = min(
+                        mulai + TTE_BATCH_SIZE,
+                        total_tte,
+                    )
 
                     progress_tte = st.progress(
                         0,
-                        text="Menyiapkan pengajuan TTE Kemenag...",
+                        text=(
+                            f"Menyiapkan TTE {mulai + 1}-{akhir} "
+                            f"dari {total_tte}..."
+                        ),
                     )
                     status_tte = st.empty()
 
-                    for index, item in enumerate(
-                        hasil_pdf_tte,
-                        start=1,
-                    ):
+                    batch_results = []
+
+                    for posisi in range(mulai, akhir):
+                        item = hasil_pdf_tte[posisi]
+                        nomor_batch = posisi - mulai + 1
+                        total_batch = akhir - mulai
+
                         nama_tte = str(
                             item.get("nama") or "Pegawai"
                         ).strip()
@@ -2029,7 +2143,9 @@ if hasil_pdf_session:
 
                         status_tte.info(
                             "Mengajukan SPD ke TTE: "
-                            f"{nama_tte} ({index}/{total_tte})\n\n"
+                            f"{nama_tte} "
+                            f"({posisi + 1}/{total_tte})\n\n"
+                            f"Batch: {nomor_batch}/{total_batch}\n"
                             f"Perihal: {perihal_final_tte}"
                         )
 
@@ -2043,34 +2159,33 @@ if hasil_pdf_session:
                             )
                         except Exception as e:
                             sukses_tte = False
-                            pesan_tte = str(e)
+                            pesan_tte = (
+                                f"Exception: {type(e).__name__}: {e}"
+                            )
 
-                        if sukses_tte:
-                            berhasil_tte += 1
-                        else:
-                            gagal_tte += 1
+                        hasil_item_tte = {
+                            "pegawai_id": item.get("pegawai_id"),
+                            "nama": nama_tte,
+                            "nip": item.get("nip"),
+                            "bidang": item.get("bidang"),
+                            "bidang_pengajuan": item.get("bidang_pengajuan"),
+                            "ppk_nama": item.get("ppk_nama"),
+                            "filename": filename_tte,
+                            "perihal": perihal_final_tte,
+                            "sukses": bool(sukses_tte),
+                            "pesan": str(pesan_tte or ""),
+                        }
 
-                        hasil_tte.append(
-                            {
-                                "pegawai_id": item.get("pegawai_id"),
-                                "nama": nama_tte,
-                                "nip": item.get("nip"),
-                                "bidang": item.get("bidang"),
-                                "bidang_pengajuan": item.get("bidang_pengajuan"),
-                                "ppk_nama": item.get("ppk_nama"),
-                                "filename": filename_tte,
-                                "perihal": perihal_final_tte,
-                                "sukses": sukses_tte,
-                                "pesan": pesan_tte,
-                            }
-                        )
+                        batch_results.append(hasil_item_tte)
 
                         progress_tte.progress(
-                            index / total_tte,
-                            text=f"Pengajuan TTE {index}/{total_tte}",
+                            nomor_batch / total_batch,
+                            text=(
+                                f"Pengajuan TTE {posisi + 1}/{total_tte}"
+                            ),
                         )
 
-                        if index < total_tte:
+                        if posisi < akhir - 1:
                             for sisa_detik in range(
                                 TTE_DELAY_DETIK,
                                 0,
@@ -2083,19 +2198,48 @@ if hasil_pdf_session:
                                 )
                                 time.sleep(1)
 
-                    status_tte.empty()
-                    st.session_state["hasil_tte_spd"] = hasil_tte
+                    tte_results.extend(batch_results)
 
-                    if gagal_tte == 0:
+                    st.session_state["tte_batch_results"] = tte_results
+                    st.session_state["tte_next_index"] = akhir
+                    st.session_state["hasil_tte_spd"] = tte_results
+
+                    status_tte.empty()
+
+                    berhasil_batch = sum(
+                        1
+                        for item in batch_results
+                        if item.get("sukses")
+                    )
+                    gagal_batch = len(batch_results) - berhasil_batch
+
+                    if akhir < total_tte:
                         st.success(
-                            "Semua dokumen berhasil diajukan ke TTE Kemenag. "
-                            f"Total: {berhasil_tte} dokumen."
+                            f"Batch {mulai + 1}-{akhir} selesai: "
+                            f"{berhasil_batch} berhasil, {gagal_batch} gagal. "
+                            f"Masih {total_tte - akhir} dokumen. "
+                            "Tekan tombol Lanjutkan untuk batch berikutnya."
                         )
                     else:
-                        st.warning(
-                            "Pengajuan TTE selesai. "
-                            f"{berhasil_tte} berhasil, {gagal_tte} gagal."
+                        berhasil_total = sum(
+                            1
+                            for item in tte_results
+                            if item.get("sukses")
                         )
+                        gagal_total = len(tte_results) - berhasil_total
+
+                        if gagal_total == 0:
+                            st.success(
+                                "Semua dokumen selesai diajukan ke TTE Kemenag. "
+                                f"Total: {berhasil_total} dokumen."
+                            )
+                        else:
+                            st.warning(
+                                "Seluruh antrean selesai diproses. "
+                                f"{berhasil_total} berhasil, "
+                                f"{gagal_total} gagal. "
+                                "Periksa rincian error di bawah."
+                            )
 
                 finally:
                     lepas_kunci_tte(owner_token_tte)
