@@ -534,6 +534,88 @@ def buat_zip_pdf(file_pdf_list):
     return buffer.getvalue()
 
 
+def nama_tte_tanpa_gelar(nama):
+    """
+    Menghapus gelar umum hanya untuk nama pada Perihal TTE.
+    Nama asli pada Master Pegawai dan dokumen SPD tidak diubah.
+    """
+    nama = str(nama or "").strip()
+
+    if not nama:
+        return "Pegawai"
+
+    # Gelar depan yang umum.
+    gelar_depan = [
+        "Prof.",
+        "Dr.",
+        "Drs.",
+        "Dra.",
+        "Ir.",
+        "Hj.",
+        "H.",
+    ]
+
+    berubah = True
+    while berubah:
+        berubah = False
+        for gelar in gelar_depan:
+            pola = rf"^{re.escape(gelar)}\s+"
+            nama_baru = re.sub(
+                pola,
+                "",
+                nama,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip()
+
+            if nama_baru != nama:
+                nama = nama_baru
+                berubah = True
+                break
+
+    # Gelar belakang umum. Dibuat bertahap agar kombinasi seperti
+    # ", S.Ag. M.Pd.I" juga dapat dibersihkan.
+    gelar_belakang = [
+        r"S\.Kom\.?",
+        r"S\.Ag\.?",
+        r"S\.E\.?",
+        r"S\.H\.?",
+        r"S\.Sos\.?",
+        r"S\.T\.?",
+        r"S\.Pd\.?",
+        r"M\.Pd\.I\.?",
+        r"M\.Pd\.?",
+        r"M\.Si\.?",
+        r"M\.A\.?",
+        r"M\.H\.?",
+        r"M\.Ag\.?",
+        r"M\.T\.?",
+        r"M\.Kom\.?",
+        r"M\.Sos\.?",
+    ]
+
+    berubah = True
+    while berubah:
+        berubah = False
+
+        for pola_gelar in gelar_belakang:
+            pola = rf"(?:,\s*|\s+){pola_gelar}\s*$"
+            nama_baru = re.sub(
+                pola,
+                "",
+                nama,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip(" ,.")
+
+            if nama_baru != nama:
+                nama = nama_baru
+                berubah = True
+                break
+
+    return nama
+
+
 def format_label_pegawai(pegawai):
     nama = str(
         pegawai.get("nama") or ""
@@ -635,6 +717,8 @@ with col_form:
         key="pegawai_spd_multi",
         placeholder="Pilih satu atau beberapa pegawai",
         help="Anda dapat memilih pegawai dari bidang yang berbeda.",
+        width="stretch",
+        wrap=True,
     )
 
     pegawai_terpilih = [
@@ -1786,12 +1870,26 @@ if hasil_pdf_session:
                 ):
                     st.divider()
 
-        perihal_tte = st.text_input(
+        # Perihal TTE dibuat otomatis dari seluruh kota tujuan.
+        daftar_kota_tujuan_tte = [
+            str(item.get("tujuan") or "").strip()
+            for item in tujuan_list
+            if str(item.get("tujuan") or "").strip()
+        ]
+
+        tujuan_tte = "-".join(
+            daftar_kota_tujuan_tte
+        ) or "Tujuan"
+
+        st.text_input(
             "Perihal Dokumen TTE",
-            value="Surat Perjalanan Dinas",
+            value=(
+                f"SPD-{tujuan_tte}-Nama Pegawai"
+            ),
+            disabled=True,
             help=(
-                "Nama pegawai akan ditambahkan otomatis "
-                "pada bagian akhir perihal."
+                "Format otomatis: SPD-(semua kota tujuan)-"
+                "nama pegawai tanpa gelar."
             ),
             key="perihal_tte_pd_pontren",
         )
@@ -1813,176 +1911,123 @@ if hasil_pdf_session:
             key="btn_ajukan_semua_tte_pd_pontren",
         ):
 
-            if not str(
-                perihal_tte or ""
-            ).strip():
+            lock_berhasil, lock_info = coba_kunci_tte()
 
-                st.error(
-                    "Perihal Dokumen TTE wajib diisi."
-                )
+            if not lock_berhasil:
+                st.warning(lock_info)
 
             else:
+                owner_token_tte = lock_info
 
-                lock_berhasil, lock_info = coba_kunci_tte()
+                try:
+                    total_tte = len(hasil_pdf_tte)
+                    berhasil_tte = 0
+                    gagal_tte = 0
+                    hasil_tte = []
 
-                if not lock_berhasil:
-
-                    st.warning(
-                        lock_info
+                    progress_tte = st.progress(
+                        0,
+                        text="Menyiapkan pengajuan TTE Kemenag...",
                     )
+                    status_tte = st.empty()
 
-                else:
+                    for index, item in enumerate(
+                        hasil_pdf_tte,
+                        start=1,
+                    ):
+                        nama_tte = str(
+                            item.get("nama") or "Pegawai"
+                        ).strip()
 
-                    owner_token_tte = lock_info
-
-                    try:
-
-                        total_tte = len(
-                            hasil_pdf_tte
+                        nama_tte_bersih = nama_tte_tanpa_gelar(
+                            nama_tte
                         )
 
-                        berhasil_tte = 0
-                        gagal_tte = 0
-                        hasil_tte = []
+                        pdf_path_tte = str(
+                            item.get("path") or ""
+                        ).strip()
 
-                        progress_tte = st.progress(
-                            0,
-                            text=(
-                                "Menyiapkan pengajuan "
-                                "TTE Kemenag..."
-                            ),
+                        filename_tte = str(
+                            item.get("filename")
+                            or f"SPD_{safe_filename(nama_tte)}.pdf"
+                        ).strip()
+
+                        perihal_final_tte = (
+                            f"SPD-{tujuan_tte}-{nama_tte_bersih}"
                         )
 
-                        status_tte = st.empty()
+                        status_tte.info(
+                            "Mengajukan SPD ke TTE: "
+                            f"{nama_tte} ({index}/{total_tte})\n\n"
+                            f"Perihal: {perihal_final_tte}"
+                        )
 
-                        for index, item in enumerate(
-                            hasil_pdf_tte,
-                            start=1,
-                        ):
-
-                            nama_tte = str(
-                                item.get("nama") or "Pegawai"
-                            ).strip()
-
-                            pdf_path_tte = str(
-                                item.get("path") or ""
-                            ).strip()
-
-                            filename_tte = str(
-                                item.get("filename")
-                                or f"SPD_{safe_filename(nama_tte)}.pdf"
-                            ).strip()
-
-                            perihal_final_tte = (
-                                f"{str(perihal_tte).strip()} "
-                                f"- {nama_tte}"
-                            )
-
-                            status_tte.info(
-                                "Mengajukan SPD ke TTE: "
-                                f"{nama_tte} "
-                                f"({index}/{total_tte})"
-                            )
-
-                            try:
-
-                                sukses_tte, pesan_tte = (
-                                    ajukan_file_ke_tte(
-                                        pdf_path=pdf_path_tte,
-                                        perihal_dokumen=
-                                            perihal_final_tte,
-                                        filename=filename_tte,
-                                    )
+                        try:
+                            sukses_tte, pesan_tte = (
+                                ajukan_file_ke_tte(
+                                    pdf_path=pdf_path_tte,
+                                    perihal_dokumen=perihal_final_tte,
+                                    filename=filename_tte,
                                 )
-
-                            except Exception as e:
-
-                                sukses_tte = False
-                                pesan_tte = str(e)
-
-                            if sukses_tte:
-                                berhasil_tte += 1
-                            else:
-                                gagal_tte += 1
-
-                            hasil_tte.append(
-                                {
-                                    "pegawai_id":
-                                        item.get("pegawai_id"),
-                                    "nama":
-                                        nama_tte,
-                                    "nip":
-                                        item.get("nip"),
-                                    "bidang":
-                                        item.get("bidang"),
-                                    "bidang_pengajuan":
-                                        item.get("bidang_pengajuan"),
-                                    "ppk_nama":
-                                        item.get("ppk_nama"),
-                                    "filename":
-                                        filename_tte,
-                                    "sukses":
-                                        sukses_tte,
-                                    "pesan":
-                                        pesan_tte,
-                                }
                             )
+                        except Exception as e:
+                            sukses_tte = False
+                            pesan_tte = str(e)
 
-                            progress_tte.progress(
-                                index / total_tte,
-                                text=(
-                                    f"Pengajuan TTE "
-                                    f"{index}/{total_tte}"
-                                ),
-                            )
-
-                            # ==================================
-                            # DELAY ACAK ANTAR DOKUMEN
-                            # ==================================
-                            if index < total_tte:
-
-                                # Cooldown antar request untuk pacing/rate limiting.
-                                # Timer dibuat terlihat agar pengguna mengetahui bahwa
-                                # aplikasi sedang menunggu sebelum request berikutnya.
-                                for sisa_detik in range(
-                                    TTE_DELAY_DETIK,
-                                    0,
-                                    -1,
-                                ):
-                                    status_tte.info(
-                                        f"{nama_tte} selesai diproses. "
-                                        f"Menunggu {sisa_detik} detik "
-                                        "sebelum dokumen berikutnya..."
-                                    )
-                                    time.sleep(1)
-
-                        status_tte.empty()
-
-                        st.session_state[
-                            "hasil_tte_spd"
-                        ] = hasil_tte
-
-                        if gagal_tte == 0:
-
-                            st.success(
-                                "Semua dokumen berhasil "
-                                "diajukan ke TTE Kemenag. "
-                                f"Total: {berhasil_tte} dokumen."
-                            )
-
+                        if sukses_tte:
+                            berhasil_tte += 1
                         else:
+                            gagal_tte += 1
 
-                            st.warning(
-                                "Pengajuan TTE selesai. "
-                                f"{berhasil_tte} berhasil, "
-                                f"{gagal_tte} gagal."
-                            )
-
-                    finally:
-
-                        lepas_kunci_tte(
-                            owner_token_tte
+                        hasil_tte.append(
+                            {
+                                "pegawai_id": item.get("pegawai_id"),
+                                "nama": nama_tte,
+                                "nip": item.get("nip"),
+                                "bidang": item.get("bidang"),
+                                "bidang_pengajuan": item.get("bidang_pengajuan"),
+                                "ppk_nama": item.get("ppk_nama"),
+                                "filename": filename_tte,
+                                "perihal": perihal_final_tte,
+                                "sukses": sukses_tte,
+                                "pesan": pesan_tte,
+                            }
                         )
+
+                        progress_tte.progress(
+                            index / total_tte,
+                            text=f"Pengajuan TTE {index}/{total_tte}",
+                        )
+
+                        if index < total_tte:
+                            for sisa_detik in range(
+                                TTE_DELAY_DETIK,
+                                0,
+                                -1,
+                            ):
+                                status_tte.info(
+                                    f"{nama_tte} selesai diproses. "
+                                    f"Menunggu {sisa_detik} detik "
+                                    "sebelum dokumen berikutnya..."
+                                )
+                                time.sleep(1)
+
+                    status_tte.empty()
+                    st.session_state["hasil_tte_spd"] = hasil_tte
+
+                    if gagal_tte == 0:
+                        st.success(
+                            "Semua dokumen berhasil diajukan ke TTE Kemenag. "
+                            f"Total: {berhasil_tte} dokumen."
+                        )
+                    else:
+                        st.warning(
+                            "Pengajuan TTE selesai. "
+                            f"{berhasil_tte} berhasil, {gagal_tte} gagal."
+                        )
+
+                finally:
+                    lepas_kunci_tte(owner_token_tte)
 
 
 
