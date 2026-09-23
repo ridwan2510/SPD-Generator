@@ -91,29 +91,39 @@ def _replace_in_table(table, replacements):
         ).casefold()
 
         if "pangkat dan golongan" in label_row_text:
-            nilai = replacements.get("${pangkatgolongan}")
-            if nilai is None:
-                nilai = replacements.get("${pangkat_golongan}")
+            # Jangan menulis nilai ke paragraph kosong pada cell luar jika
+            # cell tersebut memiliki nested table. Pada template SPD,
+            # baris Pangkat/Golongan memang menggunakan nested table:
+            # kolom pertama berisi "a." dan kolom kedua berisi
+            # ${pangkatgolongan}. Menulis ke paragraph luar akan membuat
+            # "-" tambahan di atas baris "a. -".
+            #
+            # Placeholder di nested table tetap diproses oleh rekursi di
+            # bawah sehingga cukup biarkan mekanisme replacement normal
+            # mengisinya. Untuk template lama yang benar-benar tidak
+            # memiliki nested table, barulah isi cell nilai yang kosong.
+            has_nested_table = any(
+                bool(cell.tables)
+                for cell in row.cells[1:]
+            )
 
-            # Jangan memaksa tanda "-" di level template.
-            # Nilai "-" hanya diberikan oleh 2_Buat_SPD.py untuk
-            # status yang memang berada di luar CPNS/PNS/PPPK/
-            # PPPK PARUH WAKTU.
-            nilai = "" if nilai is None else str(nilai).strip()
+            if not has_nested_table:
+                nilai = replacements.get("${pangkatgolongan}")
+                if nilai is None:
+                    nilai = replacements.get("${pangkat_golongan}")
 
-            # Pada template SPD saat ini, tiga sel pertama adalah label
-            # (akibat merge) dan tiga sel berikutnya adalah area nilai.
-            # Isi semua sel nilai yang kosong agar ketiganya konsisten.
-            for cell in row.cells[1:]:
-                cell_text = str(cell.text or "").strip()
-                if not cell_text:
-                    paragraph = cell.paragraphs[0]
-                    if paragraph.runs:
-                        paragraph.runs[0].text = nilai
-                        for run in paragraph.runs[1:]:
-                            run.text = ""
-                    else:
-                        paragraph.add_run(nilai)
+                nilai = "" if nilai is None else str(nilai).strip()
+
+                for cell in row.cells[1:]:
+                    cell_text = str(cell.text or "").strip()
+                    if not cell_text:
+                        paragraph = cell.paragraphs[0]
+                        if paragraph.runs:
+                            paragraph.runs[0].text = nilai
+                            for run in paragraph.runs[1:]:
+                                run.text = ""
+                        else:
+                            paragraph.add_run(nilai)
 
         for cell in row.cells:
             for paragraph in cell.paragraphs:
