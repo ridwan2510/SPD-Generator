@@ -446,7 +446,7 @@ def cari_kepala_kanwil(pegawai_list):
             pegawai.get("jabatan") or ""
         ).strip().lower()
 
-        if jabatan == "Kepala Kantor Wilayah":
+        if jabatan == "kepala kantor wilayah":
             return pegawai
 
     # Fallback untuk data jabatan yang lebih panjang.
@@ -455,7 +455,7 @@ def cari_kepala_kanwil(pegawai_list):
             pegawai.get("jabatan") or ""
         ).strip().lower()
 
-        if "Kepala Kantor Wilayah" in jabatan:
+        if "kepala kantor wilayah" in jabatan:
             return pegawai
 
     return None
@@ -543,11 +543,11 @@ kepala = cari_kepala_kanwil(
 
 if not kepala:
     st.warning(
-        "Data Kepala Kantor Wilayah belum ditemukan."
+        "Data kepala kantor wilayah belum ditemukan."
     )
     st.info(
         "Pastikan pada Master Pegawai terdapat pegawai "
-        "dengan jabatan `Kepala Kantor Wilayah`."
+        "dengan jabatan `kepala kantor wilayah`."
     )
     st.stop()
 
@@ -821,7 +821,7 @@ Jabatan: `{jabatan}`
 
     with col_kepala1:
         st.text_input(
-            "Nama Kepala Kantor Wilayah",
+            "Nama kepala kantor wilayah",
             value=str(
                 kepala.get("nama") or ""
             ),
@@ -831,7 +831,7 @@ Jabatan: `{jabatan}`
 
     with col_kepala2:
         st.text_input(
-            "NIP Kepala Kantor Wilayah",
+            "NIP kepala kantor wilayah",
             value=str(
                 kepala.get("nip") or ""
             ),
