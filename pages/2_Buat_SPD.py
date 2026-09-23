@@ -1,7 +1,6 @@
 import os
 import re
 import zipfile
-import random
 import time
 import uuid
 from io import BytesIO
@@ -49,6 +48,11 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+
+    /* ======================================================
+       RESPONSIVE PAGE
+       ====================================================== */
+
     .block-container {
         max-width: 1500px;
         padding-top: 2rem;
@@ -57,6 +61,11 @@ st.markdown(
         padding-right: 3rem;
     }
 
+    /* ======================================================
+       FORM CONTROLS
+       ====================================================== */
+
+    div[data-testid="stMultiSelect"],
     div[data-testid="stTextInput"],
     div[data-testid="stTextArea"],
     div[data-testid="stDateInput"],
@@ -65,9 +74,72 @@ st.markdown(
         max-width: 100%;
     }
 
+    /* ======================================================
+       MULTISELECT PEGAWAI
+
+       Streamlit/BaseWeb menggunakan flex untuk chip/tag.
+       Paksa container untuk membungkus tag ke baris berikutnya
+       sehingga tidak memanjang keluar area form.
+       ====================================================== */
+
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    div[data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 3px !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Chip pegawai tetap berada di dalam container */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] {
+        display: inline-flex !important;
+        flex: 0 1 auto !important;
+        max-width: calc(100% - 8px) !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        margin: 2px 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* Teks chip dipotong dengan ellipsis, bukan memaksa container melebar */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] span {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    /* Tombol hapus chip tidak ikut mengecil */
+    div[data-testid="stMultiSelect"] [data-baseweb="tag"] svg {
+        flex-shrink: 0 !important;
+    }
+
+    /* Input pencarian tetap punya ruang dan tidak mendorong chip */
+    div[data-testid="stMultiSelect"] input {
+        min-width: 60px !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* ======================================================
+       BORDER / CONTAINER
+       ====================================================== */
+
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 10px;
     }
+
+    /* ======================================================
+       RESPONSIVE BREAKPOINTS
+       ====================================================== */
 
     @media (max-width: 1200px) {
         .block-container {
@@ -97,6 +169,7 @@ st.markdown(
             font-size: 1.6rem;
         }
     }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -223,10 +296,10 @@ BIDANG_TTE_PD_PONTREN = (
     "Pendidikan Diniyah dan Pondok Pesantren"
 )
 
-# Delay acak antar pengajuan dokumen TTE.
+# Jeda antar pengajuan TTE untuk pacing/rate limiting.
 # Tidak diterapkan setelah dokumen terakhir.
-TTE_DELAY_MIN_DETIK = 4
-TTE_DELAY_MAX_DETIK = 7
+# Ini bukan mekanisme untuk menghindari deteksi sistem.
+TTE_DELAY_DETIK = 5
 
 # Lock global agar hanya satu batch pengajuan TTE berjalan
 # pada satu waktu di instance aplikasi yang sama.
@@ -352,49 +425,6 @@ def lepas_kunci_tte(owner_token):
         pass
 
 
-def get_status_pegawai(pegawai):
-    """Mengambil status pegawai secara konsisten."""
-    return str(
-        pegawai.get("status_pegawai") or ""
-    ).strip().upper()
-
-
-def is_non_pegawai(pegawai):
-    """True jika data ditandai sebagai NON PEGAWAI."""
-    return get_status_pegawai(pegawai) == "NON PEGAWAI"
-
-
-def is_peserta_pondok(pegawai):
-    """
-    Kompatibilitas nama fungsi lama.
-
-    Data NON PEGAWAI menggunakan kolom `nip` untuk menyimpan NIK.
-    """
-    return is_non_pegawai(pegawai)
-
-
-def get_nomor_identitas(pegawai):
-    """Mengambil NIK untuk NON PEGAWAI dan NIP untuk pegawai."""
-    # Struktur master tetap menggunakan satu kolom `nip`.
-    # Fallback nik/NIK dipertahankan agar data lama tetap terbaca.
-    if is_non_pegawai(pegawai):
-        return str(
-            pegawai.get("nip")
-            or pegawai.get("nik")
-            or pegawai.get("NIK")
-            or ""
-        ).strip()
-
-    return str(
-        pegawai.get("nip") or ""
-    ).strip()
-
-
-def get_label_identitas(pegawai):
-    """Label identitas yang dipakai template: NIK. atau NIP."""
-    return "NIK." if is_peserta_pondok(pegawai) else "NIP."
-
-
 def get_pangkat_golongan(pegawai):
     pangkat = str(
         pegawai.get("pangkat") or ""
@@ -413,7 +443,7 @@ def get_pangkat_golongan(pegawai):
     if golongan and golongan != "-":
         return golongan
 
-    return "-"
+    return ""
 
 
 def get_jabatan_instansi(pegawai):
@@ -440,22 +470,28 @@ def get_jabatan_instansi(pegawai):
 def cari_kepala_kanwil(pegawai_list):
     """Mencari Kepala Kantor Wilayah dari master pegawai."""
 
-    # Prioritas exact match.
+    # Prioritas exact match. Mendukung data baru dan data lama.
     for pegawai in pegawai_list:
         jabatan = str(
             pegawai.get("jabatan") or ""
-        ).strip().lower()
+        ).strip().casefold()
 
-        if jabatan == "kepala kantor wilayah":
+        if jabatan in (
+            "kepala kantor wilayah",
+            "kepala kanwil",
+        ):
             return pegawai
 
     # Fallback untuk data jabatan yang lebih panjang.
     for pegawai in pegawai_list:
         jabatan = str(
             pegawai.get("jabatan") or ""
-        ).strip().lower()
+        ).strip().casefold()
 
-        if "kepala kantor wilayah" in jabatan:
+        if (
+            "kepala kantor wilayah" in jabatan
+            or "kepala kanwil" in jabatan
+        ):
             return pegawai
 
     return None
@@ -503,8 +539,9 @@ def format_label_pegawai(pegawai):
         pegawai.get("nama") or ""
     ).strip()
 
-    nomor_identitas = get_nomor_identitas(pegawai)
-    label_identitas = "NIK" if is_peserta_pondok(pegawai) else "NIP"
+    nip = str(
+        pegawai.get("nip") or ""
+    ).strip()
 
     bidang = str(
         pegawai.get("bidang") or ""
@@ -513,7 +550,7 @@ def format_label_pegawai(pegawai):
     if not bidang:
         bidang = "-"
 
-    return f"{nama} | {label_identitas} {nomor_identitas} | {bidang}"
+    return f"{nama} | NIP {nip} | {bidang}"
 
 
 # ============================================================
@@ -543,11 +580,11 @@ kepala = cari_kepala_kanwil(
 
 if not kepala:
     st.warning(
-        "Data kepala kantor wilayah belum ditemukan."
+        "Data Kepala Kanwil belum ditemukan."
     )
     st.info(
         "Pastikan pada Master Pegawai terdapat pegawai "
-        "dengan jabatan `kepala kantor wilayah`."
+        "dengan jabatan `Kepala Kantor Wilayah`."
     )
     st.stop()
 
@@ -598,8 +635,6 @@ with col_form:
         key="pegawai_spd_multi",
         placeholder="Pilih satu atau beberapa pegawai",
         help="Anda dapat memilih pegawai dari bidang yang berbeda.",
-        width="stretch",
-        wrap=True,
     )
 
     pegawai_terpilih = [
@@ -624,8 +659,9 @@ with col_form:
                     item.get("nama") or "-"
                 )
 
-                nomor_identitas = get_nomor_identitas(item) or "-"
-                label_identitas = "NIK" if is_peserta_pondok(item) else "NIP"
+                nip = str(
+                    item.get("nip") or "-"
+                )
 
                 bidang = str(
                     item.get("bidang") or "-"
@@ -639,7 +675,7 @@ with col_form:
                     f"""
 **{nomor}. {nama}**
 
-{label_identitas}: `{nomor_identitas}`  
+NIP: `{nip}`  
 Bidang: `{bidang}`  
 Pangkat/Gol: `{get_pangkat_golongan(item) or '-'}`  
 Jabatan: `{jabatan}`
@@ -681,6 +717,7 @@ Jabatan: `{jabatan}`
     ppk_by_bidang = {}
     ppk_error = []
     pegawai_tanpa_bidang = []
+    ppk_langsung = None
 
     if not pegawai_terpilih:
         st.info("Pilih pegawai terlebih dahulu.")
@@ -798,6 +835,8 @@ Jabatan: `{jabatan}`
 
             if ppk_langsung:
                 # PPK langsung dipakai untuk semua pegawai yang dipilih.
+                # Bidang asli pegawai tetap dipertahankan.
+                # Bidang pengajuan SPD/TTE ditentukan dari bidang PPK ini.
                 for pegawai in pegawai_terpilih:
                     bidang_pegawai = str(pegawai.get("bidang") or "").strip()
                     ppk_by_bidang[bidang_pegawai] = ppk_langsung
@@ -815,13 +854,13 @@ Jabatan: `{jabatan}`
     # ========================================================
 
     st.divider()
-    st.subheader("3. Kepala Kantor Wilayah")
+    st.subheader("3. Kepala Kanwil")
 
     col_kepala1, col_kepala2 = st.columns(2)
 
     with col_kepala1:
         st.text_input(
-            "Nama kepala kantor wilayah",
+            "Nama Kepala Kanwil",
             value=str(
                 kepala.get("nama") or ""
             ),
@@ -831,7 +870,7 @@ Jabatan: `{jabatan}`
 
     with col_kepala2:
         st.text_input(
-            "NIP kepala kantor wilayah",
+            "NIP Kepala Kanwil",
             value=str(
                 kepala.get("nip") or ""
             ),
@@ -1092,14 +1131,6 @@ Jabatan: `{jabatan}`
             )
 
 
-    for item in pegawai_terpilih:
-        if is_peserta_pondok(item) and not get_nomor_identitas(item):
-            error_list.append(
-                "NIK peserta belum tersedia untuk: "
-                + str(item.get("nama") or "-")
-            )
-
-
     # ========================================================
     # TUJUAN UTAMA
     # ========================================================
@@ -1270,14 +1301,8 @@ Jabatan: `{jabatan}`
 
         replacements[
             "${nip}"
-        ] = get_nomor_identitas(
-            data_pegawai
-        )
-
-        replacements[
-            "${label_identitas}"
-        ] = get_label_identitas(
-            data_pegawai
+        ] = str(
+            data_pegawai.get("nip") or ""
         )
 
         replacements[
@@ -1533,15 +1558,47 @@ if generate_btn:
                 except Exception:
                     pass
 
+                # ==================================================
+                # BIDANG PENGAJUAN SPD
+                #
+                # Mode otomatis:
+                #   bidang pengajuan = bidang pegawai karena PPK
+                #   mengikuti bidang pegawai.
+                #
+                # Mode PPK langsung:
+                #   bidang pengajuan = bidang PPK yang dipilih.
+                #
+                # Bidang asli pegawai tetap disimpan pada "bidang".
+                # ==================================================
+                bidang_pegawai = str(
+                    pegawai.get("bidang") or ""
+                ).strip()
+
+                ppk_pegawai = ppk_by_bidang.get(
+                    bidang_pegawai
+                )
+
+                bidang_pengajuan = str(
+                    (ppk_pegawai or {}).get("bidang")
+                    or bidang_pegawai
+                    or ""
+                ).strip()
+
                 hasil_pdf.append(
                     {
                         "pegawai_id": str(
                             pegawai.get("id") or ""
                         ),
                         "nama": pegawai.get("nama") or "",
-                        "nip": get_nomor_identitas(pegawai),
-                        "label_identitas": get_label_identitas(pegawai),
-                        "bidang": pegawai.get("bidang") or "",
+                        "nip": pegawai.get("nip") or "",
+                        "bidang": bidang_pegawai,
+                        "bidang_pengajuan": bidang_pengajuan,
+                        "ppk_nama": str(
+                            (ppk_pegawai or {}).get("nama") or ""
+                        ).strip(),
+                        "ppk_nip": str(
+                            (ppk_pegawai or {}).get("nip") or ""
+                        ).strip(),
                         "path": output_pdf,
                         "filename": f"{nama_file}.pdf",
                     }
@@ -1639,8 +1696,9 @@ if hasil_pdf_session:
         with col_nama:
             st.markdown(
                 f"**{item['nama']}**  \n"
-                f"{item.get('label_identitas') or 'NIP.'}: `{item['nip']}`  \n"
-                f"Bidang: `{item.get('bidang') or '-'}`"
+                f"NIP: `{item['nip']}`  \n"
+                f"Bidang Pegawai: `{item.get('bidang') or '-'}`  \n"
+                f"Bidang Pengajuan: `{item.get('bidang_pengajuan') or '-'}`"
             )
 
         with col_download:
@@ -1667,7 +1725,7 @@ if hasil_pdf_session:
         item
         for item in hasil_pdf_session
         if bidang_boleh_tte(
-            item.get("bidang")
+            item.get("bidang_pengajuan")
         )
         and os.path.exists(
             item.get("path") or ""
@@ -1690,9 +1748,10 @@ if hasil_pdf_session:
     else:
 
         st.caption(
-            "Hanya dokumen SPD pegawai Bidang Pendidikan "
-            "Diniyah dan Pondok Pesantren yang akan dikirim. "
-            "Dokumen dari bidang lain tidak ikut diajukan. "
+            "Hanya dokumen SPD dengan bidang pengajuan "
+            "Pendidikan Diniyah dan Pondok Pesantren yang akan dikirim. "
+            "Bidang pengajuan mengikuti bidang pegawai jika PPK diset "
+            "sesuai bidang, atau mengikuti bidang PPK jika PPK dipilih langsung. "
             "Pengajuan TTE dibuat satu antrean agar beberapa "
             "pengguna tidak mengirim dengan akun SATKER yang "
             "sama secara bersamaan."
@@ -1715,9 +1774,11 @@ if hasil_pdf_session:
 
                 st.markdown(
                     f"**{nomor}. {item.get('nama') or '-'}**  \n"
-                    f"{item.get('label_identitas') or 'NIP.'}: `{item.get('nip') or '-'}`  \n"
-                    f"Bidang: `{item.get('bidang') or '-'}`  \n"
-                    f"File: `{item.get('filename') or '-'}'"
+                    f"NIP: `{item.get('nip') or '-'}`  \n"
+                    f"Bidang Pegawai: `{item.get('bidang') or '-'}`  \n"
+                    f"Bidang Pengajuan: `{item.get('bidang_pengajuan') or '-'}`  \n"
+                    f"PPK: `{item.get('ppk_nama') or '-'}`  \n"
+                    f"File: `{item.get('filename') or '-'}`"
                 )
 
                 if nomor < len(
@@ -1852,10 +1913,12 @@ if hasil_pdf_session:
                                         nama_tte,
                                     "nip":
                                         item.get("nip"),
-                                    "label_identitas":
-                                        item.get("label_identitas", "NIP."),
                                     "bidang":
                                         item.get("bidang"),
+                                    "bidang_pengajuan":
+                                        item.get("bidang_pengajuan"),
+                                    "ppk_nama":
+                                        item.get("ppk_nama"),
                                     "filename":
                                         filename_tte,
                                     "sukses":
@@ -1878,20 +1941,20 @@ if hasil_pdf_session:
                             # ==================================
                             if index < total_tte:
 
-                                delay_tte = random.randint(
-                                    TTE_DELAY_MIN_DETIK,
-                                    TTE_DELAY_MAX_DETIK,
-                                )
-
-                                status_tte.info(
-                                    f"{nama_tte} selesai diproses. "
-                                    f"Menunggu {delay_tte} detik "
-                                    "sebelum dokumen berikutnya..."
-                                )
-
-                                time.sleep(
-                                    delay_tte
-                                )
+                                # Cooldown antar request untuk pacing/rate limiting.
+                                # Timer dibuat terlihat agar pengguna mengetahui bahwa
+                                # aplikasi sedang menunggu sebelum request berikutnya.
+                                for sisa_detik in range(
+                                    TTE_DELAY_DETIK,
+                                    0,
+                                    -1,
+                                ):
+                                    status_tte.info(
+                                        f"{nama_tte} selesai diproses. "
+                                        f"Menunggu {sisa_detik} detik "
+                                        "sebelum dokumen berikutnya..."
+                                    )
+                                    time.sleep(1)
 
                         status_tte.empty()
 
