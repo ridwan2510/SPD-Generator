@@ -852,3 +852,175 @@ def ajukan_file_ke_tte(
         perihal_dokumen=
             perihal_dokumen,
     )
+
+# ============================================================
+# DOWNLOAD BULK DOKUMEN TTE
+# ============================================================
+
+def _teks_html(nilai: object) -> str:
+    """Ubah nilai kolom DataTables (yang dapat berisi HTML) menjadi teks."""
+    if nilai is None:
+        return ""
+    soup = BeautifulSoup(str(nilai), "html.parser")
+    return " ".join(soup.stripped_strings).strip()
+
+
+def _href_html(nilai: object, base_url: str) -> str | None:
+    """Ambil href yang benar-benar dikirim pada kolom unduh dari server."""
+    from urllib.parse import urljoin
+    if not nilai:
+        return None
+    soup = BeautifulSoup(str(nilai), "html.parser")
+    anchor = soup.find("a", href=True)
+    if not anchor:
+        return None
+    href = str(anchor.get("href") or "").strip()
+    return urljoin(base_url, href) if href else None
+
+
+def ambil_daftar_dokumen_tte(length: int = 1000):
+    """Ambil baris daftar TTE dari endpoint DataTables JSON yang digunakan UI.
+
+    Nomor mengikuti urutan respons endpoint. URL unduh tidak ditebak: hanya
+    menggunakan href yang dikirim pada kolom `unduh`. Dokumen non-FINAL tetap
+    ditampilkan, tetapi tidak dianggap sebagai PDF final yang siap diarsipkan.
+    """
+    from urllib.parse import urlparse
+
+    session = _buat_session()
+    try:
+        _login_tte(session)
+        halaman_daftar = f"{TTE_BASE_URL}/satker/dokumen/naskah/index/unggah"
+        endpoint = f"{TTE_BASE_URL}/satker/dokumen/naskah/data_index"
+        params = {
+            "draw": "1",
+            "start": "0",
+            "length": str(max(1, min(int(length), 5000))),
+            "type": "unggah",
+            "status_dokumen": "",
+            "unduh": "",
+            "search[value]": "",
+            "search[regex]": "false",
+            "order[0][column]": "0",
+            "order[0][dir]": "asc",
+        }
+        # Sertakan metadata kolom DataTables agar kompatibel dengan endpoint UI.
+        kolom = ["DT_RowIndex", "waktu", "perihal_dokumen", "instansi",
+                 "status_dokumen", "jumlah_pemaraf", "jumlah_penandatangan",
+                 "unduh", "options"]
+        for i, nama in enumerate(kolom):
+            params[f"columns[{i}][data]"] = nama
+            params[f"columns[{i}][name]"] = "" if i else nama
+            params[f"columns[{i}][searchable]"] = "false" if i == 0 else "true"
+            params[f"columns[{i}][orderable]"] = "false" if i == 0 else "true"
+            params[f"columns[{i}][search][value]"] = ""
+            params[f"columns[{i}][search][regex]"] = "false"
+
+        response = session.get(
+            endpoint,
+            params=params,
+            headers={
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": halaman_daftar,
+            },
+            timeout=DEFAULT_TIMEOUT,
+            allow_redirects=True,
+        )
+        _cek_response(response, "Membaca daftar JSON TTE")
+        if "/login" in str(response.url).lower():
+            raise RuntimeError("Sesi TTE belum terautentikasi. Periksa konfigurasi login.")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError(
+                "Endpoint daftar TTE tidak mengembalikan JSON. "
+                "Pastikan akun dapat membuka daftar Naskah Dokumen."
+            ) from exc
+
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise RuntimeError("Format JSON TTE tidak memiliki daftar `data` yang valid.")
+
+        hasil = []
+        for posisi, row in enumerate(rows, start=1):
+            if not isinstance(row, dict):
+                continue
+            status = _teks_html(row.get("status_dokumen")) or "Status tidak diketahui"
+            label_unduh = _teks_html(row.get("unduh"))
+            href = _href_html(row.get("unduh"), TTE_BASE_URL)
+            # Hanya link dengan domain TTE yang diizinkan. URL PDF tidak dibangun
+            # dari path_signed_dokumen karena pola route tidak diasumsikan.
+            if href:
+                parsed = urlparse(href)
+                if parsed.scheme != "https" or parsed.netloc.lower() != "tte.kemenag.go.id":
+                    href = None
+            nomor = row.get("DT_RowIndex") or posisi
+            try:
+                nomor = int(nomor)
+            except (TypeError, ValueError):
+                nomor = posisi
+            hasil.append({
+                "nomor": nomor,
+                "posisi": posisi,
+                "id": row.get("id"),
+                "ringkasan": str(row.get("perihal_dokumen") or f"Dokumen {nomor}").strip(),
+                "waktu": _teks_html(row.get("waktu")),
+                "status": status,
+                "label_unduh": label_unduh,
+                "tautan_unduh": href,
+                "path_signed_dokumen": row.get("path_signed_dokumen"),
+                "token": row.get("token"),
+                "final": "final" in label_unduh.lower() or "final" in status.lower(),
+            })
+        return hasil
+    finally:
+        session.close()
+
+
+def unduh_rentang_dokumen_tte(items: list[dict]) -> list[dict]:
+    """Unduh dokumen FINAL dalam rentang, menggunakan satu sesi autentikasi.
+
+    Baris Draft/Sedang Proses dilewati dengan status yang jelas karena tombolnya
+    menuju halaman dokumen yang sedang diproses, bukan PDF final bertanda tangan.
+    """
+    from urllib.parse import urlparse
+    session = _buat_session()
+    hasil = []
+    try:
+        _login_tte(session)
+        for item in items:
+            nomor = item.get("nomor")
+            nama = item.get("ringkasan") or f"SPD_{nomor}"
+            if not item.get("final"):
+                hasil.append({
+                    "nomor": nomor, "sukses": False,
+                    "pesan": f"Dilewati: status {item.get('status') or item.get('label_unduh') or 'bukan FINAL'}. Tombol dokumen ini bukan tautan PDF final.",
+                    "data": None,
+                })
+                continue
+            url = str(item.get("tautan_unduh") or "").strip()
+            if not url:
+                hasil.append({"nomor": nomor, "sukses": False, "pesan": "Tautan FINAL tidak ditemukan pada JSON TTE.", "data": None})
+                continue
+            parsed = urlparse(url)
+            if parsed.scheme != "https" or parsed.netloc.lower() != "tte.kemenag.go.id":
+                hasil.append({"nomor": nomor, "sukses": False, "pesan": "Tautan tidak valid atau bukan domain TTE Kemenag.", "data": None})
+                continue
+            try:
+                response = session.get(
+                    url, timeout=DEFAULT_TIMEOUT, allow_redirects=True,
+                    headers={"Referer": f"{TTE_BASE_URL}/satker/dokumen/naskah/index/unggah"},
+                )
+                response.raise_for_status()
+                content_type = (response.headers.get("Content-Type") or "").lower()
+                data = response.content or b""
+                if not data or ("pdf" not in content_type and not data.startswith(b"%PDF-")):
+                    hasil.append({"nomor": nomor, "sukses": False, "pesan": "Tautan FINAL tidak menghasilkan file PDF. Bisa jadi URL menuju halaman HTML atau memerlukan izin tambahan.", "data": None})
+                else:
+                    hasil.append({"nomor": nomor, "sukses": True, "pesan": "PDF FINAL berhasil diunduh.", "data": data})
+            except Exception as exc:
+                hasil.append({"nomor": nomor, "sukses": False, "pesan": str(exc), "data": None})
+        return hasil
+    finally:
+        session.close()
