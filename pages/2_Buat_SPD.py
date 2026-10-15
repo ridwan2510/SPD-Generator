@@ -2398,23 +2398,38 @@ if hasil_tte_session:
 
 
 # ============================================================
-# UPLOAD PDF SENDIRI KE TTE - KHUSUS PD PONTREN
+# UPLOAD DOKUMEN SENDIRI KE TTE - KHUSUS PD PONTREN
 # ============================================================
-# Fitur ini terpisah dari Generate SPD. Pengguna dapat mengirim
-# PDF yang sudah dimiliki, tetapi wajib memilih PPK aktif yang
-# tercatat pada bidang Pendidikan Diniyah dan Pondok Pesantren.
-# Pemilihan PPK dari master adalah validasi bidang di sisi aplikasi;
-# checkbox saja tidak dipakai sebagai kontrol akses.
 
 st.divider()
-st.subheader("📤 Upload PDF Sendiri ke TTE Kemenag")
+st.subheader("📤 Upload Dokumen Sendiri ke TTE Kemenag")
 st.caption(
-    "Gunakan fitur ini jika Anda hanya ingin mengajukan dokumen ke TTE "
-    "tanpa membuat SPD melalui formulir di atas. Fitur dibatasi untuk "
-    "PPK aktif Bidang Pendidikan Diniyah dan Pondok Pesantren."
+    "Unggah beberapa PDF sekaligus atau satu/beberapa file ZIP. "
+    "Nama file PDF otomatis digunakan sebagai Perihal Dokumen TTE."
 )
 
-with st.expander("Buka formulir Upload TTE Mandiri", expanded=False):
+tab_upload, tab_panduan_upload = st.tabs(
+    ["📤 Upload TTE", "ℹ️ Panduan Upload"]
+)
+
+with tab_panduan_upload:
+    st.markdown(
+        """
+        **Cara menggunakan upload TTE mandiri**
+        1. Pilih PPK aktif dari bidang Pendidikan Diniyah dan Pondok Pesantren.
+        2. Seret beberapa file PDF ke area upload, atau pilih file ZIP yang berisi PDF.
+        3. Periksa daftar dokumen sebelum mengajukan.
+        4. Perihal dokumen TTE mengikuti nama file PDF tanpa ekstensi `.pdf`.
+
+        **Contoh:** `SPD-Kabupaten Demak-Ahmad Fauzi.pdf` akan menggunakan
+        perihal `SPD-Kabupaten Demak-Ahmad Fauzi`.
+
+        File ZIP diproses sebagai kumpulan PDF. File selain PDF di dalam ZIP
+        diabaikan. Hindari ZIP berpassword.
+        """
+    )
+
+with tab_upload:
     try:
         ppk_aktif_upload = [
             ppk
@@ -2443,158 +2458,257 @@ with st.expander("Buka formulir Upload TTE Mandiri", expanded=False):
         if not ppk_upload_by_id:
             st.error("ID PPK aktif PD Pontren tidak valid pada Master PPK.")
         else:
-            with st.form("form_upload_tte_mandiri", clear_on_submit=False):
-                file_pdf_upload = st.file_uploader(
-                    "Pilih file PDF yang akan diajukan",
-                    type=["pdf"],
-                    accept_multiple_files=False,
-                    help="Unggah satu dokumen PDF. Pastikan file benar dan siap diajukan.",
-                    key="file_pdf_upload_tte_mandiri",
+            ppk_upload_id = st.selectbox(
+                "PPK pengajuan (Master PPK PD Pontren)",
+                options=list(ppk_upload_by_id.keys()),
+                format_func=lambda ppk_id: (
+                    f"{str(ppk_upload_by_id[ppk_id].get('nama') or '-').strip()} "
+                    f"| NIP {str(ppk_upload_by_id[ppk_id].get('nip') or '-').strip()}"
+                ),
+                help="Pilihan dibatasi pada PPK aktif yang bidangnya PD Pontren.",
+                key="ppk_upload_tte_mandiri",
+            )
+
+            file_upload_list = st.file_uploader(
+                "Seret dan lepaskan beberapa file PDF atau ZIP di sini",
+                type=["pdf", "zip"],
+                accept_multiple_files=True,
+                help=(
+                    "Bisa memilih beberapa PDF sekaligus atau beberapa ZIP. "
+                    "PDF di dalam ZIP akan diajukan satu per satu."
+                ),
+                key="files_upload_tte_mandiri",
+            )
+
+            konfirmasi_upload_mandiri = st.checkbox(
+                "Saya sudah memeriksa dokumen dan memastikan dokumen ini "
+                "memang akan diajukan melalui PPK PD Pontren.",
+                key="konfirmasi_upload_tte_mandiri",
+            )
+
+            # Baca PDF langsung dan PDF di dalam ZIP. Simpan hanya di memori
+            # selama sesi ini; nama file asal digunakan sebagai perihal TTE.
+            dokumen_upload = []
+            error_baca_upload = []
+
+            for uploaded_file in file_upload_list or []:
+                nama_upload = os.path.basename(
+                    str(uploaded_file.name or "dokumen")
                 )
 
-                ppk_upload_id = st.selectbox(
-                    "PPK pengajuan (Master PPK PD Pontren)",
-                    options=list(ppk_upload_by_id.keys()),
-                    format_func=lambda ppk_id: (
-                        f"{str(ppk_upload_by_id[ppk_id].get('nama') or '-').strip()} "
-                        f"| NIP {str(ppk_upload_by_id[ppk_id].get('nip') or '-').strip()}"
-                    ),
-                    help="Pilihan dibatasi pada PPK aktif yang bidangnya PD Pontren.",
-                )
+                if nama_upload.lower().endswith(".pdf"):
+                    pdf_bytes = uploaded_file.getvalue()
+                    if pdf_bytes.startswith(b"%PDF-"):
+                        dokumen_upload.append({
+                            "filename": nama_upload,
+                            "bytes": pdf_bytes,
+                            "sumber": nama_upload,
+                        })
+                    else:
+                        error_baca_upload.append(
+                            f"{nama_upload}: header PDF tidak valid."
+                        )
 
-                nama_dokumen_upload = st.text_input(
-                    "Nama pegawai/pemilik dokumen",
-                    placeholder="Contoh: Ahmad Fauzi",
-                    help="Nama ini digunakan pada Perihal TTE dan tidak perlu menyertakan gelar.",
-                )
+                elif nama_upload.lower().endswith(".zip"):
+                    try:
+                        with zipfile.ZipFile(BytesIO(uploaded_file.getvalue())) as arsip:
+                            for anggota in arsip.infolist():
+                                if anggota.is_dir():
+                                    continue
+                                # Abaikan path di dalam ZIP; hanya gunakan basename.
+                                nama_pdf = os.path.basename(anggota.filename)
+                                if not nama_pdf.lower().endswith(".pdf"):
+                                    continue
+                                if not nama_pdf or nama_pdf.startswith("."):
+                                    continue
+                                if anggota.file_size > 50 * 1024 * 1024:
+                                    error_baca_upload.append(
+                                        f"{nama_upload} → {nama_pdf}: ukuran PDF melebihi 50 MB."
+                                    )
+                                    continue
+                                try:
+                                    isi_pdf = arsip.read(anggota)
+                                except Exception as e:
+                                    error_baca_upload.append(
+                                        f"{nama_upload} → {nama_pdf}: gagal membaca ({e})."
+                                    )
+                                    continue
+                                if not isi_pdf.startswith(b"%PDF-"):
+                                    error_baca_upload.append(
+                                        f"{nama_upload} → {nama_pdf}: file bukan PDF valid."
+                                    )
+                                    continue
+                                dokumen_upload.append({
+                                    "filename": nama_pdf,
+                                    "bytes": isi_pdf,
+                                    "sumber": f"{nama_upload} / {nama_pdf}",
+                                })
+                    except zipfile.BadZipFile:
+                        error_baca_upload.append(
+                            f"{nama_upload}: file ZIP rusak atau tidak valid."
+                        )
+                    except Exception as e:
+                        error_baca_upload.append(
+                            f"{nama_upload}: gagal membaca ZIP ({e})."
+                        )
 
-                tujuan_dokumen_upload = st.text_input(
-                    "Kota tujuan",
-                    placeholder="Contoh: Kabupaten Demak",
-                    help="Untuk beberapa kota, pisahkan dengan tanda hubung (-).",
-                )
+            # Hindari pengajuan ganda jika nama file yang sama diunggah dua kali.
+            nama_terpakai = {}
+            for dokumen in dokumen_upload:
+                nama_asli = dokumen["filename"]
+                jumlah = nama_terpakai.get(nama_asli.casefold(), 0) + 1
+                nama_terpakai[nama_asli.casefold()] = jumlah
+                if jumlah > 1:
+                    dasar, ekstensi = os.path.splitext(nama_asli)
+                    dokumen["filename"] = f"{dasar} ({jumlah}){ekstensi}"
 
-                konfirmasi_upload_mandiri = st.checkbox(
-                    "Saya sudah memeriksa isi PDF dan memastikan dokumen ini memang "
-                    "akan diajukan melalui PPK PD Pontren."
-                )
+            if error_baca_upload:
+                for pesan in error_baca_upload:
+                    st.warning(pesan)
 
-                submit_upload_mandiri = st.form_submit_button(
-                    "📤 Ajukan PDF ke TTE",
-                    type="primary",
-                    use_container_width=True,
-                )
+            if dokumen_upload:
+                st.markdown(f"**{len(dokumen_upload)} dokumen PDF siap diproses**")
+                with st.container(border=True):
+                    for nomor, dokumen in enumerate(dokumen_upload, start=1):
+                        nama_perihal_preview = os.path.splitext(
+                            dokumen["filename"]
+                        )[0]
+                        st.write(f"{nomor}. **{dokumen['filename']}**")
+                        st.caption(f"Perihal TTE: {nama_perihal_preview}")
+            elif file_upload_list:
+                st.info("Belum ada PDF valid yang ditemukan dari file pilihan.")
 
-            if submit_upload_mandiri:
-                error_upload = []
+            ajukan_upload_mandiri = st.button(
+                "📤 Ajukan Semua Dokumen ke TTE",
+                type="primary",
+                use_container_width=True,
+                disabled=not dokumen_upload,
+                key="btn_ajukan_semua_upload_tte",
+            )
 
-                if file_pdf_upload is None:
-                    error_upload.append("Pilih file PDF terlebih dahulu.")
-                elif not file_pdf_upload.getvalue().startswith(b"%PDF-"):
-                    error_upload.append(
-                        "File yang dipilih tidak memiliki header PDF yang valid."
-                    )
-
-                nama_upload_bersih = nama_tte_tanpa_gelar(nama_dokumen_upload)
-                tujuan_upload_bersih = re.sub(
-                    r"\s+", " ", str(tujuan_dokumen_upload or "").strip()
-                ).strip("- ")
-
-                if not nama_dokumen_upload.strip():
-                    error_upload.append("Nama pegawai/pemilik dokumen wajib diisi.")
-                if not tujuan_upload_bersih:
-                    error_upload.append("Kota tujuan wajib diisi.")
-                if not konfirmasi_upload_mandiri:
-                    error_upload.append("Centang konfirmasi setelah memeriksa dokumen.")
-
+            if ajukan_upload_mandiri:
                 ppk_terpilih_upload = ppk_upload_by_id.get(ppk_upload_id)
                 if (
-                    not ppk_terpilih_upload
+                    not konfirmasi_upload_mandiri
+                    or not ppk_terpilih_upload
                     or not bidang_boleh_tte(ppk_terpilih_upload.get("bidang"))
                 ):
-                    error_upload.append(
-                        "Validasi bidang PPK gagal. Hanya PPK PD Pontren yang diizinkan."
-                    )
-
-                if error_upload:
-                    for pesan_error_upload in error_upload:
-                        st.error(pesan_error_upload)
+                    if not konfirmasi_upload_mandiri:
+                        st.error("Centang konfirmasi setelah memeriksa dokumen.")
+                    if (
+                        not ppk_terpilih_upload
+                        or not bidang_boleh_tte(ppk_terpilih_upload.get("bidang"))
+                    ):
+                        st.error(
+                            "Validasi bidang PPK gagal. Hanya PPK PD Pontren yang diizinkan."
+                        )
                 else:
-                    perihal_upload = (
-                        f"SPD-{tujuan_upload_bersih}-{nama_upload_bersih}"
-                    )
-                    filename_upload = (
-                        f"SPD_{safe_filename(tujuan_upload_bersih)}_"
-                        f"{safe_filename(nama_upload_bersih)}.pdf"
-                    )
-                    temp_path_upload = os.path.join(
-                        SESSION_OUTPUT_DIR,
-                        f"upload_tte_mandiri_{uuid.uuid4().hex}.pdf",
-                    )
-
                     lock_upload_berhasil, lock_upload_info = coba_kunci_tte()
 
                     if not lock_upload_berhasil:
                         st.warning(lock_upload_info)
                     else:
+                        hasil_batch_upload = []
                         owner_upload_token = lock_upload_info
+                        progress_upload = st.progress(
+                            0,
+                            text="Menyiapkan pengajuan dokumen...",
+                        )
+                        status_upload = st.empty()
                         try:
-                            with open(temp_path_upload, "wb") as file_temp_upload:
-                                file_temp_upload.write(file_pdf_upload.getvalue())
-
-                            with st.spinner("Mengajukan PDF ke TTE Kemenag..."):
+                            total_upload = len(dokumen_upload)
+                            for index, dokumen in enumerate(dokumen_upload, start=1):
+                                nama_file_pdf = dokumen["filename"]
+                                perihal_upload = os.path.splitext(
+                                    nama_file_pdf
+                                )[0].strip()
+                                temp_path_upload = os.path.join(
+                                    SESSION_OUTPUT_DIR,
+                                    f"upload_tte_mandiri_{uuid.uuid4().hex}.pdf",
+                                )
+                                sukses_upload_tte = False
+                                pesan_upload_tte = ""
                                 try:
+                                    with open(temp_path_upload, "wb") as file_temp:
+                                        file_temp.write(dokumen["bytes"])
+
+                                    status_upload.info(
+                                        f"Mengajukan {index}/{total_upload}: {nama_file_pdf}"
+                                    )
                                     sukses_upload_tte, pesan_upload_tte = ajukan_file_ke_tte(
                                         pdf_path=temp_path_upload,
                                         perihal_dokumen=perihal_upload,
-                                        filename=filename_upload,
+                                        filename=nama_file_pdf,
                                     )
                                 except Exception as e:
                                     sukses_upload_tte = False
                                     pesan_upload_tte = (
                                         f"Exception: {type(e).__name__}: {e}"
                                     )
+                                finally:
+                                    try:
+                                        if os.path.exists(temp_path_upload):
+                                            os.remove(temp_path_upload)
+                                    except OSError:
+                                        pass
 
-                            hasil_upload_mandiri = {
-                                "nama": nama_upload_bersih,
-                                "tujuan": tujuan_upload_bersih,
-                                "perihal": perihal_upload,
-                                "filename": filename_upload,
-                                "ppk_nama": str(
-                                    ppk_terpilih_upload.get("nama") or "-"
-                                ),
-                                "sukses": bool(sukses_upload_tte),
-                                "pesan": str(pesan_upload_tte or ""),
-                            }
-                            st.session_state["hasil_upload_tte_mandiri"] = (
-                                hasil_upload_mandiri
-                            )
+                                hasil_batch_upload.append({
+                                    "nama": nama_file_pdf,
+                                    "filename": nama_file_pdf,
+                                    "perihal": perihal_upload,
+                                    "ppk_nama": str(
+                                        ppk_terpilih_upload.get("nama") or "-"
+                                    ),
+                                    "sukses": bool(sukses_upload_tte),
+                                    "pesan": str(pesan_upload_tte or ""),
+                                    "sumber": dokumen["sumber"],
+                                })
+                                progress_upload.progress(
+                                    index / total_upload,
+                                    text=f"Memproses dokumen {index}/{total_upload}",
+                                )
+
+                                if index < total_upload:
+                                    time.sleep(TTE_DELAY_DETIK)
+
                         finally:
                             lepas_kunci_tte(owner_upload_token)
-                            try:
-                                if os.path.exists(temp_path_upload):
-                                    os.remove(temp_path_upload)
-                            except OSError:
-                                pass
+                            status_upload.empty()
+
+                        st.session_state["hasil_upload_tte_mandiri"] = (
+                            hasil_batch_upload
+                        )
 
             hasil_upload_mandiri = st.session_state.get(
-                "hasil_upload_tte_mandiri"
+                "hasil_upload_tte_mandiri",
+                [],
             )
             if hasil_upload_mandiri:
-                st.markdown("#### Hasil Upload TTE Mandiri")
-                st.write(f"**File:** {hasil_upload_mandiri.get('filename', '-')}")
-                st.write(f"**Perihal:** {hasil_upload_mandiri.get('perihal', '-')}")
-                st.write(f"**PPK:** {hasil_upload_mandiri.get('ppk_nama', '-')}")
-                if hasil_upload_mandiri.get("sukses"):
-                    st.success(
-                        "Dokumen berhasil diajukan ke TTE. "
-                        + str(hasil_upload_mandiri.get("pesan") or "")
-                    )
-                else:
-                    st.error(
-                        "Dokumen belum berhasil diajukan ke TTE. "
-                        + str(hasil_upload_mandiri.get("pesan") or "")
-                    )
+                st.markdown("#### Status Upload TTE Mandiri")
+                jumlah_sukses_upload = sum(
+                    1 for item in hasil_upload_mandiri if item.get("sukses")
+                )
+                jumlah_gagal_upload = len(hasil_upload_mandiri) - jumlah_sukses_upload
+                col_upload_sukses, col_upload_gagal = st.columns(2)
+                with col_upload_sukses:
+                    st.metric("Berhasil diajukan", jumlah_sukses_upload)
+                with col_upload_gagal:
+                    st.metric("Belum berhasil", jumlah_gagal_upload)
+
+                for item in hasil_upload_mandiri:
+                    with st.container(border=True):
+                        st.markdown(f"**{item.get('filename', item.get('nama', '-'))}**")
+                        st.caption(f"Perihal TTE: {item.get('perihal', '-')}")
+                        if item.get("sukses"):
+                            st.success(
+                                "Berhasil diajukan. "
+                                + str(item.get("pesan") or "")
+                            )
+                        else:
+                            st.error(
+                                "Belum berhasil diajukan. "
+                                + str(item.get("pesan") or "Tidak ada keterangan.")
+                            )
 
 
 # ============================================================
